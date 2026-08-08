@@ -1,6 +1,7 @@
 package com.questionhelper.search
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -34,6 +35,7 @@ import com.questionhelper.ocr.OcrManager
 import com.questionhelper.QuestionApp
 import com.questionhelper.data.QuestionRepository
 import com.questionhelper.ui.theme.QuestionHelperTheme
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.*
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ExecutorService

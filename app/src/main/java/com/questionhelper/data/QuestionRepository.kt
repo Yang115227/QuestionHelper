@@ -41,6 +41,10 @@ class QuestionRepository(private val dao: QuestionDao) {
         dao.getWrongCount()
     }
 
+    suspend fun getQuestionById(id: Long): Question? = withContext(Dispatchers.IO) {
+        dao.getQuestionById(id)
+    }
+
     fun getQuestionsBySubject(subject: String): Flow<List<Question>> {
         return dao.getQuestionsBySubject(subject)
     }

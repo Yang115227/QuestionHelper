@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import com.questionhelper.bank.QuestionBankActivity
 import com.questionhelper.search.CameraSearchActivity
+import com.questionhelper.data.QuestionRepository
 import com.questionhelper.search.FloatWindowService
 import com.questionhelper.search.ScreenCaptureService
 import com.questionhelper.ui.theme.QuestionHelperTheme
@@ -115,7 +116,7 @@ class MainActivity : ComponentActivity() {
                     },
                     FeatureItem(
                         "悬浮搜题",
-                        Icons.Default.Float,
+                        Icons.Default.TouchApp,
                         "全局悬浮球快速搜题"
                     ) {
                         context.startService(Intent(context, FloatWindowService::class.java))
