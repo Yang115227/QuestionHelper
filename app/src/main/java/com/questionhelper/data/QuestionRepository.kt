@@ -48,4 +48,14 @@ class QuestionRepository(private val dao: QuestionDao) {
     fun getQuestionsBySubject(subject: String): Flow<List<Question>> {
         return dao.getQuestionsBySubject(subject)
     }
+
+    // 新增：顺序练习
+    suspend fun getOrderedQuestions(subject: String = "全部"): List<Question> = withContext(Dispatchers.IO) {
+        if (subject == "全部") dao.getAllQuestionsList() else dao.getQuestionsOrderById(subject)
+    }
+
+    // 新增：随机练习
+    suspend fun getRandomQuestions(subject: String = "全部"): List<Question> = withContext(Dispatchers.IO) {
+        if (subject == "全部") dao.getAllQuestionsRandom() else dao.getQuestionsRandom(subject)
+    }
 }

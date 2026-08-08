@@ -46,6 +46,21 @@ interface QuestionDao {
 
     @Query("SELECT COUNT(*) FROM questions WHERE wrongCount > 0")
     suspend fun getWrongCount(): Int
+
+    // 新增：顺序练习（按ID排序）
+    @Query("SELECT * FROM questions WHERE subject = :subject ORDER BY id ASC")
+    suspend fun getQuestionsOrderById(subject: String): List<Question>
+
+    // 新增：随机练习
+    @Query("SELECT * FROM questions WHERE subject = :subject ORDER BY RANDOM()")
+    suspend fun getQuestionsRandom(subject: String): List<Question>
+
+    // 新增：获取所有题目（非Flow，用于练习模式）
+    @Query("SELECT * FROM questions ORDER BY id ASC")
+    suspend fun getAllQuestionsList(): List<Question>
+
+    @Query("SELECT * FROM questions ORDER BY RANDOM()")
+    suspend fun getAllQuestionsRandom(): List<Question>
 }
 
 @Dao

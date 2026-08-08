@@ -42,6 +42,14 @@ fun ImportScreen() {
     val repo = remember { QuestionRepository(QuestionApp.database.questionDao()) }
     var importStatus by remember { mutableStateOf("") }
     var isImporting by remember { mutableStateOf(false) }
+    var selectedCategory by remember { mutableStateOf("默认") }
+    var customCategory by remember { mutableStateOf("") }
+    var showCategoryDialog by remember { mutableStateOf(false) }
+    var existingSubjects by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        repo.allSubjects.collect { existingSubjects = it }
+    }
 
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -52,9 +60,11 @@ fun ImportScreen() {
                 try {
                     val inputStream = context.contentResolver.openInputStream(uri)
                     val fileName = getFileName(context, uri)
-                    val questions = parseFile(inputStream, fileName)
+                    val category = if (customCategory.isNotBlank()) customCategory else selectedCategory
+                    val questions = parseFile(inputStream, fileName, category)
                     repo.insertQuestions(questions)
-                    importStatus = "成功导入 ${questions.size} 道题目"
+                    importStatus = "成功导入 ${questions.size} 道题目（分类：$category）"
+                    customCategory = ""
                 } catch (e: Exception) {
                     importStatus = "导入失败: ${e.message}"
                 } finally {
@@ -74,6 +84,32 @@ fun ImportScreen() {
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // 分类选择
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { showCategoryDialog = true }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("导入分类", style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            if (customCategory.isNotBlank()) customCategory else selectedCategory,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "选择分类")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             Text(
                 "支持格式：TXT、Excel（.xlsx）",
                 style = MaterialTheme.typography.bodyMedium,
@@ -108,6 +144,7 @@ fun ImportScreen() {
 
             Spacer(modifier = Modifier.height(32.dp))
 
+            // 格式说明
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("TXT格式说明", style = MaterialTheme.typography.titleSmall)
@@ -117,19 +154,85 @@ fun ImportScreen() {
                     Text("答案：A")
                     Text("解析：xxx")
                     Text("---（分隔线）")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "注：如不指定分类，将使用上方选择的分类",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
     }
+
+    // 分类选择对话框
+    if (showCategoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showCategoryDialog = false },
+            title = { Text("选择导入分类") },
+            text = {
+                Column {
+                    Text(
+                        "选择已有分类或输入新分类：",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    
+                    // 现有分类
+                    if (existingSubjects.isNotEmpty()) {
+                        Text("已有分类：", style = MaterialTheme.typography.labelMedium)
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            existingSubjects.forEach { subject ->
+                                FilterChip(
+                                    selected = selectedCategory == subject && customCategory.isBlank(),
+                                    onClick = {
+                                        selectedCategory = subject
+                                        customCategory = ""
+                                    },
+                                    label = { Text(subject) }
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                    
+                    // 新分类输入
+                    OutlinedTextField(
+                        value = customCategory,
+                        onValueChange = { customCategory = it },
+                        label = { Text("新分类名称") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showCategoryDialog = false }) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { 
+                    customCategory = ""
+                    showCategoryDialog = false 
+                }) {
+                    Text("使用默认")
+                }
+            }
+        )
+    }
 }
 
-private fun parseFile(inputStream: InputStream?, fileName: String?): List<Question> {
+private fun parseFile(inputStream: InputStream?, fileName: String?, defaultCategory: String): List<Question> {
     inputStream ?: return emptyList()
     return when {
         fileName?.endsWith(".xlsx") == true || fileName?.endsWith(".xls") == true -> {
-            ExcelParser.parse(inputStream)
+            ExcelParser.parse(inputStream, defaultCategory)
         }
-        else -> TxtParser.parse(inputStream)
+        else -> TxtParser.parse(inputStream, defaultCategory)
     }
 }
 

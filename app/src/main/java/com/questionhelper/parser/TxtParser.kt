@@ -6,7 +6,7 @@ import java.io.InputStream
 import java.io.InputStreamReader
 
 object TxtParser {
-    fun parse(inputStream: InputStream): List<Question> {
+    fun parse(inputStream: InputStream, defaultCategory: String = "默认"): List<Question> {
         val questions = mutableListOf<Question>()
         val reader = BufferedReader(InputStreamReader(inputStream))
         val lines = reader.readLines()
@@ -15,7 +15,7 @@ object TxtParser {
         var options = ""
         var answer = ""
         var analysis = ""
-        var subject = "默认"
+        var subject = defaultCategory
 
         for (line in lines) {
             val trimmed = line.trim()
@@ -30,6 +30,7 @@ object TxtParser {
                             subject = subject
                         ))
                         content = ""; options = ""; answer = ""; analysis = ""
+                        subject = defaultCategory
                     }
                 }
                 trimmed.startsWith("答案：") || trimmed.startsWith("答案:") -> {
