@@ -10,10 +10,10 @@ import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
 import android.view.*
-import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import com.questionhelper.MainActivity
 import com.questionhelper.R
 
 class FloatWindowService : Service() {
@@ -23,10 +23,24 @@ class FloatWindowService : Service() {
     private var isShowingCrop = false
 
     companion object {
+        private const val TAG = "FloatWindow"
+        
         fun checkPermission(context: Context): Boolean {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 Settings.canDrawOverlays(context)
             } else true
+        }
+        
+        fun start(context: Context) {
+            if (!checkPermission(context)) {
+                Toast.makeText(context, "请先开启悬浮窗权限", Toast.LENGTH_LONG).show()
+                val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+                return
+            }
+            context.startService(Intent(context, FloatWindowService::class.java))
         }
     }
 
@@ -35,52 +49,88 @@ class FloatWindowService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        if (!checkPermission(this)) {
-            Toast.makeText(this, "请先开启悬浮窗权限", Toast.LENGTH_LONG).show()
-            stopSelf()
-            return
-        }
         showFloatBall()
     }
 
     private fun showFloatBall() {
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            dpToPx(56),
+            dpToPx(56),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
                 WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 100
-            y = 300
+            x = dpToPx(20)
+            y = dpToPx(100)
         }
 
         val button = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_search)
-            background = ContextCompat.getDrawable(context, android.R.drawable.ic_menu_crop)
-            setBackgroundColor(ContextCompat.getColor(context, android.R.color.holo_blue_light))
-            alpha = 0.8f
-            setOnClickListener {
-                if (isShowingCrop) {
-                    hideCropView()
-                } else {
-                    showCropView()
-                }
-            }
+            background = createCircleBackground()
+            alpha = 0.85f
+            setOnClickListener { onFloatBallClick() }
             setOnTouchListener(FloatBallTouchListener(params))
         }
 
         floatBall = button
-        windowManager.addView(button, params)
+        try {
+            windowManager.addView(button, params)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to add float ball", e)
+        }
+    }
+
+    private fun createCircleBackground(): android.graphics.drawable.Drawable {
+        val drawable = android.graphics.drawable.GradientDrawable()
+        drawable.shape = android.graphics.drawable.GradientDrawable.OVAL
+        drawable.setColor(ContextCompat.getColor(this, android.R.color.holo_blue_light))
+        return drawable
+    }
+
+    private fun onFloatBallClick() {
+        if (isShowingCrop) {
+            hideCropView()
+            return
+        }
+
+        val hasScreenCapture = ScreenCaptureService.isRunning
+        val hasAccessibility = isAccessibilityServiceEnabled()
+
+        Log.d(TAG, "ScreenCapture: $hasScreenCapture, Accessibility: $hasAccessibility")
+
+        if (!hasScreenCapture && !hasAccessibility) {
+            Toast.makeText(this, "请先选择截图方式", Toast.LENGTH_SHORT).show()
+            val intent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("show_capture_choice", true)
+            }
+            startActivity(intent)
+            return
+        }
+
+        showCropView()
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        return try {
+            val enabledServices = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
+            enabledServices.contains("com.questionhelper/.search.AccessibilitySearchService")
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private fun showCropView() {
+        if (isShowingCrop) return
         isShowingCrop = true
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -104,30 +154,41 @@ class FloatWindowService : Service() {
             }
         }
 
-        windowManager.addView(cropView, params)
+        try {
+            windowManager.addView(cropView, params)
+            Log.d(TAG, "Crop view shown")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to show crop view", e)
+            isShowingCrop = false
+            Toast.makeText(this, "框选层显示失败", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun hideCropView() {
         isShowingCrop = false
         cropView?.let {
-            windowManager.removeView(it)
+            try {
+                windowManager.removeView(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to remove crop view", e)
+            }
             cropView = null
         }
     }
 
     private fun captureAndSearch(rect: Rect) {
-        // 优先使用录屏，其次无障碍
+        Log.d(TAG, "Capture area: $rect")
+        
         if (ScreenCaptureService.isRunning) {
             sendBroadcast(Intent("com.questionhelper.CAPTURE_SCREEN").apply {
                 putExtra("rect", rect)
             })
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // 尝试无障碍截图
+        } else if (isAccessibilityServiceEnabled()) {
             sendBroadcast(Intent("com.questionhelper.ACCESSIBILITY_CAPTURE").apply {
                 putExtra("rect", rect)
             })
         } else {
-            Toast.makeText(this, "请先开启录屏或无障碍服务", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "截图服务未运行，请重新开启", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -138,6 +199,7 @@ class FloatWindowService : Service() {
         private var initialY = 0
         private var touchX = 0f
         private var touchY = 0f
+        private var isClick = false
 
         override fun onTouch(v: View, event: MotionEvent): Boolean {
             when (event.action) {
@@ -146,24 +208,41 @@ class FloatWindowService : Service() {
                     initialY = params.y
                     touchX = event.rawX
                     touchY = event.rawY
+                    isClick = true
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX + (event.rawX - touchX).toInt()
-                    params.y = initialY + (event.rawY - touchY).toInt()
+                    val dx = event.rawX - touchX
+                    val dy = event.rawY - touchY
+                    if (kotlin.math.abs(dx) > 10 || kotlin.math.abs(dy) > 10) {
+                        isClick = false
+                    }
+                    params.x = initialX + dx.toInt()
+                    params.y = initialY + dy.toInt()
                     windowManager.updateViewLayout(v, params)
                     return true
+                }
+                MotionEvent.ACTION_UP -> {
+                    return isClick
                 }
             }
             return false
         }
     }
 
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).toInt()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         hideCropView()
         floatBall?.let {
-            windowManager.removeView(it)
+            try {
+                windowManager.removeView(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to remove float ball", e)
+            }
             floatBall = null
         }
     }
