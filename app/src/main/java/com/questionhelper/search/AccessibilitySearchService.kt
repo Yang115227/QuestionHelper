@@ -76,8 +76,12 @@ class AccessibilitySearchService : AccessibilityService() {
         
         takeScreenshot(Display.DEFAULT_DISPLAY, ContextCompat.getMainExecutor(this), object : TakeScreenshotCallback {
             override fun onSuccess(screenshot: ScreenshotResult) {
+                val bmp = getScreenshotBitmap(screenshot)
+                if (bmp == null) {
+                    handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败，请重试", Toast.LENGTH_SHORT).show() }
+                    return
+                }
                 try {
-                    val bmp = getScreenshotBitmap(screenshot) ?: return
                     val safeRect = Rect(
                         rect.left.coerceIn(0, bmp.width),
                         rect.top.coerceIn(0, bmp.height),
@@ -94,7 +98,7 @@ class AccessibilitySearchService : AccessibilityService() {
                         handler.post { Toast.makeText(this@AccessibilitySearchService, "选区无效", Toast.LENGTH_SHORT).show() }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Crop failed", e)
+                    bmp.recycle()
                     handler.post { Toast.makeText(this@AccessibilitySearchService, "截图处理失败", Toast.LENGTH_SHORT).show() }
                 }
             }
@@ -123,19 +127,21 @@ class AccessibilitySearchService : AccessibilityService() {
                 val text = ocrManager.recognizeFromBitmap(bitmap)
                 bitmap.recycle()
                 
-                if (text.isNotEmpty()) {
-                    val repo = QuestionRepository(QuestionApp.database.questionDao())
-                    val question = repo.searchQuestion(text.take(50))
-                    handler.post {
-                        startActivity(Intent(this@AccessibilitySearchService, SearchResultActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            putExtra("question", question?.content ?: text)
-                            putExtra("answer", question?.answer ?: "未在题库中找到匹配题目")
-                            putExtra("analysis", question?.analysis ?: "")
-                        })
-                    }
-                } else {
+                if (text.isEmpty()) {
                     handler.post { Toast.makeText(this@AccessibilitySearchService, "未识别到文字", Toast.LENGTH_SHORT).show() }
+                    return@launch
+                }
+
+                val repo = QuestionRepository(QuestionApp.database.questionDao())
+                val question = repo.searchQuestion(text.take(50))
+                
+                handler.post {
+                    startActivity(Intent(this@AccessibilitySearchService, SearchResultActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        putExtra("question", question?.content ?: text)
+                        putExtra("answer", question?.answer ?: "未在题库中找到匹配题目")
+                        putExtra("analysis", question?.analysis ?: "")
+                    })
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "OCR failed", e)

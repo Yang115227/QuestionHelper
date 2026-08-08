@@ -197,6 +197,9 @@ class FloatWindowService : Service() {
         Log.d(TAG, "captureAndSearch: $rect")
         
         if (ScreenCaptureService.isRunning) {
+            // 关键修复：先 startService 确保 Service 真的活着（防止被系统休眠）
+            startService(Intent(this, ScreenCaptureService::class.java))
+            
             Toast.makeText(this, "正在截图识别...", Toast.LENGTH_SHORT).show()
             sendBroadcast(Intent("com.questionhelper.CAPTURE_SCREEN").apply {
                 putExtra("rect", rect)
