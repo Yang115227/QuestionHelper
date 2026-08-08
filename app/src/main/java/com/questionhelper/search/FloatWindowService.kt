@@ -197,10 +197,12 @@ class FloatWindowService : Service() {
         Log.d(TAG, "captureAndSearch: $rect")
         
         if (ScreenCaptureService.isRunning) {
+            Toast.makeText(this, "正在截图识别...", Toast.LENGTH_SHORT).show()
             sendBroadcast(Intent("com.questionhelper.CAPTURE_SCREEN").apply {
                 putExtra("rect", rect)
             })
         } else if (isAccessibilityServiceEnabled()) {
+            Toast.makeText(this, "正在截图识别...", Toast.LENGTH_SHORT).show()
             sendBroadcast(Intent("com.questionhelper.ACCESSIBILITY_CAPTURE").apply {
                 putExtra("rect", rect)
             })
