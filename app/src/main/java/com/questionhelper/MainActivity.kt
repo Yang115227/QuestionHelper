@@ -60,8 +60,12 @@ class MainActivity : ComponentActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 1001 && resultCode == RESULT_OK && data != null) {
-            ScreenCaptureService.setResult(resultCode, data)
-            startService(Intent(this, ScreenCaptureService::class.java))
+            // 通过 Intent 传递 MediaProjection 数据，不用静态变量
+            val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
+                putExtra("result_code", resultCode)
+                putExtra("result_data", data)
+            }
+            startService(serviceIntent)
             Toast.makeText(this, "录屏服务已启动", Toast.LENGTH_SHORT).show()
             FloatWindowService.start(this)
         } else if (requestCode == 1001) {

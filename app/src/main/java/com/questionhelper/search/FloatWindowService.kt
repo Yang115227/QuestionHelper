@@ -121,8 +121,17 @@ class FloatWindowService : Service() {
                 contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             ) ?: return false
-            enabledServices.contains("com.questionhelper/.search.AccessibilitySearchService")
+            
+            // 使用完整类名匹配，避免字符串写错
+            val componentName = android.content.ComponentName(
+                this, 
+                AccessibilitySearchService::class.java
+            ).flattenToString()
+            
+            Log.d(TAG, "Checking accessibility: $componentName in [$enabledServices]")
+            enabledServices.contains(componentName)
         } catch (e: Exception) {
+            Log.e(TAG, "Check accessibility failed", e)
             false
         }
     }
