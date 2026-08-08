@@ -3,7 +3,6 @@ package com.questionhelper.bank
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -28,10 +27,11 @@ class PracticeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val mode = intent.getStringExtra("mode") ?: "order"
-        val subject = intent.getStringExtra("subject") ?: "全部"
+        val subject = intent.getStringExtra("subject")?.takeIf { it.isNotBlank() } ?: "全部"
+        val questionId = intent.getLongExtra("questionId", -1)
         setContent {
             QuestionHelperTheme {
-                PracticeScreen(mode = mode, subject = subject)
+                PracticeScreen(mode = mode, subject = subject, initialQuestionId = questionId)
             }
         }
     }
@@ -39,7 +39,7 @@ class PracticeActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PracticeScreen(mode: String, subject: String) {
+fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
     val context = LocalContext.current
     val repo = remember { QuestionRepository(QuestionApp.database.questionDao()) }
     val scope = rememberCoroutineScope()
@@ -54,17 +54,19 @@ fun PracticeScreen(mode: String, subject: String) {
     // 加载题目
     LaunchedEffect(mode, subject) {
         isLoading = true
-        questions = when (mode) {
-            "order" -> repo.getOrderedQuestions(subject)
-            "random" -> repo.getRandomQuestions(subject)
-            "single" -> {
-                val activity = context as? ComponentActivity
-                val questionId = activity?.intent?.getLongExtra("questionId", -1) ?: -1L
-                if (questionId > 0) {
-                    repo.getQuestionById(questionId)?.let { listOf(it) } ?: emptyList()
-                } else emptyList()
+        questions = try {
+            when (mode) {
+                "order" -> repo.getOrderedQuestions(subject)
+                "random" -> repo.getRandomQuestions(subject)
+                "single" -> {
+                    val q = repo.getQuestionById(initialQuestionId)
+                    listOfNotNull(q)
+                }
+                else -> repo.getOrderedQuestions(subject)
             }
-            else -> repo.getOrderedQuestions(subject)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
         }
         isLoading = false
         currentIndex = 0
@@ -91,9 +93,7 @@ fun PracticeScreen(mode: String, subject: String) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.White
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         }
     ) { padding ->
@@ -128,9 +128,7 @@ fun PracticeScreen(mode: String, subject: String) {
                         // 题目
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = Color(0xFFF5F5F5)
-                            ),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5)),
                             shape = MaterialTheme.shapes.medium
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
@@ -155,9 +153,7 @@ fun PracticeScreen(mode: String, subject: String) {
 
                                 Card(
                                     onClick = {
-                                        if (!showAnswer) {
-                                            selectedOption = optLetter
-                                        }
+                                        if (!showAnswer) selectedOption = optLetter
                                     },
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -171,7 +167,7 @@ fun PracticeScreen(mode: String, subject: String) {
                                         }
                                     ),
                                     border = if (isSelected || isAnswer) {
-                                        BorderStroke(
+                                        androidx.compose.foundation.BorderStroke(
                                             1.5.dp,
                                             when {
                                                 isAnswer -> Color(0xFF4CAF50)
@@ -210,7 +206,6 @@ fun PracticeScreen(mode: String, subject: String) {
                                 }
                             }
                         } else {
-                            // 判断题/填空题没有选项
                             OutlinedTextField(
                                 value = selectedOption ?: "",
                                 onValueChange = { if (!showAnswer) selectedOption = it },
@@ -236,20 +231,16 @@ fun PracticeScreen(mode: String, subject: String) {
                                     }
                                 },
                                 enabled = selectedOption != null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
                                 shape = MaterialTheme.shapes.medium
                             ) {
                                 Text("提交答案", fontSize = 16.sp)
                             }
                         } else {
-                            // 答案解析
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (isCorrect == true) 
-                                        Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+                                    containerColor = if (isCorrect == true) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
                                 )
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
@@ -260,10 +251,7 @@ fun PracticeScreen(mode: String, subject: String) {
                                         fontWeight = FontWeight.Medium
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        "正确答案：${currentQuestion.answer}",
-                                        fontSize = 15.sp
-                                    )
+                                    Text("正确答案：${currentQuestion.answer}", fontSize = 15.sp)
                                 }
                             }
 
@@ -280,7 +268,6 @@ fun PracticeScreen(mode: String, subject: String) {
 
                             Spacer(modifier = Modifier.height(24.dp))
 
-                            // 底部导航
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
@@ -289,11 +276,9 @@ fun PracticeScreen(mode: String, subject: String) {
                                     onClick = {
                                         if (currentIndex > 0) {
                                             currentIndex--
-                                            resetPracticeState(
-                                                { showAnswer = it },
-                                                { selectedOption = it },
-                                                { isCorrect = it }
-                                            )
+                                            showAnswer = false
+                                            selectedOption = null
+                                            isCorrect = null
                                         }
                                     },
                                     enabled = currentIndex > 0
@@ -304,11 +289,9 @@ fun PracticeScreen(mode: String, subject: String) {
                                 if (currentIndex < questions.size - 1) {
                                     Button(onClick = {
                                         currentIndex++
-                                        resetPracticeState(
-                                            { showAnswer = it },
-                                            { selectedOption = it },
-                                            { isCorrect = it }
-                                        )
+                                        showAnswer = false
+                                        selectedOption = null
+                                        isCorrect = null
                                     }) {
                                         Text("下一题")
                                     }
@@ -326,14 +309,4 @@ fun PracticeScreen(mode: String, subject: String) {
             }
         }
     }
-}
-
-private fun resetPracticeState(
-    setShowAnswer: (Boolean) -> Unit,
-    setSelectedOption: (String?) -> Unit,
-    setIsCorrect: (Boolean?) -> Unit
-) {
-    setShowAnswer(false)
-    setSelectedOption(null)
-    setIsCorrect(null)
 }

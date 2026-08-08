@@ -39,6 +39,8 @@
         <activity android:name=".bank.QuestionBankActivity" android:theme="@style/Theme.QuestionHelper" />
         <activity android:name=".bank.PracticeActivity" android:theme="@style/Theme.QuestionHelper" />
         <activity android:name=".bank.ImportActivity" android:theme="@style/Theme.QuestionHelper" />
+        <!-- 新增：练习选择页 -->
+        <activity android:name=".bank.PracticeSelectActivity" android:theme="@style/Theme.QuestionHelper" />
 
         <!-- 录屏搜题服务 -->
         <service
