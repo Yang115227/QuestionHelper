@@ -71,7 +71,6 @@ class FloatWindowService : Service() {
             setImageResource(android.R.drawable.ic_menu_search)
             background = createCircleBackground()
             alpha = 0.9f
-            // 不再设置 onClickListener，所有逻辑在 onTouch 中处理
             setOnTouchListener(FloatBallTouchListener(params, this))
         }
 
@@ -129,23 +128,19 @@ class FloatWindowService : Service() {
                 AccessibilitySearchService::class.java
             ).flattenToString()
             
-            Log.d(TAG, "Checking accessibility for: $componentName")
-            Log.d(TAG, "Enabled services: $enabledServices")
             enabledServices.contains(componentName)
         } catch (e: Exception) {
-            Log.e(TAG, "Check accessibility failed", e)
             false
         }
     }
 
     private fun showCropView() {
-        Log.d(TAG, "showCropView called")
         if (isShowingCrop) return
         isShowingCrop = true
 
         // 隐藏悬浮球
         floatBall?.visibility = View.GONE
-        Log.d(TAG, "Float ball hidden")
+        Log.d(TAG, "Float ball hidden, showing crop view")
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -162,7 +157,7 @@ class FloatWindowService : Service() {
 
         cropView = CropOverlayView(this).apply {
             onCropConfirmed = { rect ->
-                Log.d(TAG, "Crop confirmed: $rect")
+                Log.d(TAG, "Crop confirmed, rect=$rect")
                 hideCropView()
                 captureAndSearch(rect)
             }
@@ -174,17 +169,16 @@ class FloatWindowService : Service() {
 
         try {
             windowManager.addView(cropView, params)
-            Log.d(TAG, "Crop view added successfully")
+            Log.d(TAG, "Crop view shown")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to add crop view", e)
+            Log.e(TAG, "Failed to show crop view", e)
             isShowingCrop = false
             floatBall?.visibility = View.VISIBLE
-            Toast.makeText(this, "框选层显示失败: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "框选层显示失败", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun hideCropView() {
-        Log.d(TAG, "hideCropView called")
         isShowingCrop = false
         cropView?.let {
             try {
@@ -195,7 +189,6 @@ class FloatWindowService : Service() {
             }
             cropView = null
         }
-        // 恢复显示悬浮球
         floatBall?.visibility = View.VISIBLE
         Log.d(TAG, "Float ball visible again")
     }
@@ -216,11 +209,6 @@ class FloatWindowService : Service() {
         }
     }
 
-    /**
-     * 关键修复：onTouch 中手动处理点击事件
-     * 如果 onTouch 返回 true，onClickListener 永远不会被调用
-     * 所以在 ACTION_UP 时如果是点击，手动执行 onFloatBallClick()
-     */
     private inner class FloatBallTouchListener(
         private val params: WindowManager.LayoutParams,
         private val view: View
@@ -230,8 +218,7 @@ class FloatWindowService : Service() {
         private var touchX = 0f
         private var touchY = 0f
         private var isClick = false
-        private val clickThreshold = 15f  // 移动超过这个距离不算点击
-        private val longPressThreshold = 300L  // 长按阈值，暂不用
+        private val clickThreshold = 15f
 
         override fun onTouch(v: View, event: MotionEvent): Boolean {
             when (event.action) {
@@ -246,12 +233,9 @@ class FloatWindowService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - touchX
                     val dy = event.rawY - touchY
-                    
-                    // 移动超过阈值，不算点击
                     if (kotlin.math.abs(dx) > clickThreshold || kotlin.math.abs(dy) > clickThreshold) {
                         isClick = false
                     }
-                    
                     params.x = initialX + dx.toInt()
                     params.y = initialY + dy.toInt()
                     windowManager.updateViewLayout(view, params)
@@ -259,8 +243,6 @@ class FloatWindowService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (isClick) {
-                        // 手动触发点击逻辑
-                        Log.d(TAG, "Touch is click, triggering onFloatBallClick")
                         onFloatBallClick()
                     }
                     return true
