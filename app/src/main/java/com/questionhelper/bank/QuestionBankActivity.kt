@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -239,8 +240,10 @@ private fun formatDate(time: Long): String {
 @Composable
 fun WrongBookScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val repo = remember { QuestionRepository(QuestionApp.database.questionDao()) }
     var questions by remember { mutableStateOf<List<com.questionhelper.data.Question>>(emptyList()) }
+    var showDeleteDialog by remember { mutableStateOf<com.questionhelper.data.Question?>(null) }
 
     LaunchedEffect(Unit) {
         repo.wrongQuestions.collect { questions = it }
@@ -273,13 +276,46 @@ fun WrongBookScreen() {
                         context.startActivity(intent)
                     }
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(q.content.take(80) + if (q.content.length > 80) "..." else "")
-                        Spacer(modifier = Modifier.height(4.dp))
-                        AssistChip(onClick = {}, label = { Text(q.subject) })
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(q.content.take(80) + if (q.content.length > 80) "..." else "")
+                            Spacer(modifier = Modifier.height(4.dp))
+                            AssistChip(onClick = {}, label = { Text(q.subject) })
+                        }
+                        IconButton(onClick = { showDeleteDialog = q }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "删除",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+
+    showDeleteDialog?.let { q ->
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = null },
+            title = { Text("移出错题本") },
+            text = { Text("确定将此题从错题本移除吗？") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch { repo.clearWrong(q.id) }
+                        showDeleteDialog = null
+                    }
+                ) { Text("移除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = null }) { Text("取消") }
+            }
+        )
     }
 }

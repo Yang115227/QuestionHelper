@@ -177,22 +177,22 @@ class ScreenCaptureService : Service() {
     }
 
     private fun captureArea(rect: Rect) {
-        Log.d(TAG, "captureArea called, isInitialized=$isInitialized")
-        if (!isInitialized) {
+        Log.d(TAG, "captureArea called, isInitialized=$isInitialized, imageReader=${imageReader != null}")
+        if (!isInitialized || imageReader == null) {
             handler.post { Toast.makeText(this, "录屏服务未就绪，请重新授权", Toast.LENGTH_SHORT).show() }
             return
         }
         
         handler.post { Toast.makeText(this, "正在截图...", Toast.LENGTH_SHORT).show() }
 
-        // 延迟等待框选层消失，然后从缓存取帧
         handler.postDelayed({
             synchronized(imageLock) {
                 val image = cachedImage
-                cachedImage = null  // 取走，防止重复使用
+                cachedImage = null
+                
+                Log.d(TAG, "Cached image: ${image != null}")
                 
                 if (image == null) {
-                    Log.e(TAG, "No cached image available")
                     handler.post { Toast.makeText(this, "截图失败：无可用图像，请重试", Toast.LENGTH_LONG).show() }
                     return@postDelayed
                 }
@@ -206,7 +206,6 @@ class ScreenCaptureService : Service() {
                         return@postDelayed
                     }
 
-                    // 裁剪
                     val safeRect = Rect(
                         rect.left.coerceIn(0, bitmap.width),
                         rect.top.coerceIn(0, bitmap.height),
@@ -215,7 +214,7 @@ class ScreenCaptureService : Service() {
                     )
 
                     if (safeRect.width() <= 0 || safeRect.height() <= 0) {
-                        handler.post { Toast.makeText(this, "选区无效，请重新框选", Toast.LENGTH_SHORT).show() }
+                        handler.post { Toast.makeText(this, "选区无效", Toast.LENGTH_SHORT).show() }
                         bitmap.recycle()
                         return@postDelayed
                     }
@@ -232,7 +231,7 @@ class ScreenCaptureService : Service() {
                     handler.post { Toast.makeText(this, "截图异常：${e.message}", Toast.LENGTH_SHORT).show() }
                 }
             }
-        }, 500)
+        }, 300) // 延迟缩短到300ms，因为框选层已经移除了
     }
 
     private fun imageToBitmap(image: Image): Bitmap? {

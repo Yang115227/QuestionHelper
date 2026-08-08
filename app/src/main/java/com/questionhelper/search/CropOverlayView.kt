@@ -61,6 +61,11 @@ class CropOverlayView @JvmOverloads constructor(
         setupUI()
     }
 
+    fun setInitialRect(rect: Rect) {
+        cropRect.set(rect)
+        invalidate()
+    }
+
     private fun setupUI() {
         // 顶部工具栏
         val topBar = LinearLayout(context).apply {
