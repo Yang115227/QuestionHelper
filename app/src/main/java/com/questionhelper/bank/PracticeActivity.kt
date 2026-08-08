@@ -37,6 +37,7 @@ class PracticeActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PracticeScreen(mode: String, initialQuestionId: Long, subject: String) {
+    val context = LocalContext.current
     val repo = remember { QuestionRepository(QuestionApp.database.questionDao()) }
     val scope = rememberCoroutineScope()
     
@@ -54,7 +55,7 @@ fun PracticeScreen(mode: String, initialQuestionId: Long, subject: String) {
         questions = when (mode) {
             "order" -> repo.getOrderedQuestions(subject)
             "random" -> repo.getRandomQuestions(subject)
-            "wrong" -> repo.wrongQuestions.value // 这里用collect不太方便，改用下面的方式
+            "wrong" -> emptyList() // 错题由下方的 LaunchedEffect 单独处理
             else -> {
                 // single 模式
                 val q = repo.getQuestionById(initialQuestionId)
@@ -99,7 +100,7 @@ fun PracticeScreen(mode: String, initialQuestionId: Long, subject: String) {
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { (LocalContext.current as? ComponentActivity)?.finish() }) {
+                    IconButton(onClick = { (context as? ComponentActivity)?.finish() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 }
@@ -284,7 +285,7 @@ fun PracticeScreen(mode: String, initialQuestionId: Long, subject: String) {
                                     }
                                 } else {
                                     Button(onClick = {
-                                        (LocalContext.current as? ComponentActivity)?.finish()
+                                        (context as? ComponentActivity)?.finish()
                                     }) {
                                         Text("完成")
                                     }
