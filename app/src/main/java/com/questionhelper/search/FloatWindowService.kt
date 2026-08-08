@@ -14,12 +14,10 @@ import android.widget.ImageButton
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import com.questionhelper.MainActivity
-import com.questionhelper.R
 
 class FloatWindowService : Service() {
     private lateinit var windowManager: WindowManager
     private var floatBall: View? = null
-    private var floatBallParams: WindowManager.LayoutParams? = null
     private var cropView: CropOverlayView? = null
     private var isShowingCrop = false
 
@@ -55,8 +53,8 @@ class FloatWindowService : Service() {
 
     private fun showFloatBall() {
         val params = WindowManager.LayoutParams(
-            dpToPx(56),
-            dpToPx(56),
+            dpToPx(60),
+            dpToPx(60),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
@@ -66,21 +64,21 @@ class FloatWindowService : Service() {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = dpToPx(20)
-            y = dpToPx(100)
+            y = dpToPx(200)
         }
 
         val button = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_search)
             background = createCircleBackground()
             alpha = 0.9f
-            setOnClickListener { onFloatBallClick() }
-            setOnTouchListener(FloatBallTouchListener(params))
+            // 不再设置 onClickListener，所有逻辑在 onTouch 中处理
+            setOnTouchListener(FloatBallTouchListener(params, this))
         }
 
         floatBall = button
-        floatBallParams = params
         try {
             windowManager.addView(button, params)
+            Log.d(TAG, "Float ball added")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to add float ball", e)
         }
@@ -94,6 +92,8 @@ class FloatWindowService : Service() {
     }
 
     private fun onFloatBallClick() {
+        Log.d(TAG, "Float ball clicked, isShowingCrop=$isShowingCrop")
+        
         if (isShowingCrop) {
             hideCropView()
             return
@@ -102,7 +102,7 @@ class FloatWindowService : Service() {
         val hasScreenCapture = ScreenCaptureService.isRunning
         val hasAccessibility = isAccessibilityServiceEnabled()
 
-        Log.d(TAG, "ScreenCapture: $hasScreenCapture, Accessibility: $hasAccessibility")
+        Log.d(TAG, "hasScreenCapture=$hasScreenCapture, hasAccessibility=$hasAccessibility")
 
         if (!hasScreenCapture && !hasAccessibility) {
             Toast.makeText(this, "请先选择截图方式", Toast.LENGTH_SHORT).show()
@@ -129,7 +129,8 @@ class FloatWindowService : Service() {
                 AccessibilitySearchService::class.java
             ).flattenToString()
             
-            Log.d(TAG, "Checking accessibility: $componentName")
+            Log.d(TAG, "Checking accessibility for: $componentName")
+            Log.d(TAG, "Enabled services: $enabledServices")
             enabledServices.contains(componentName)
         } catch (e: Exception) {
             Log.e(TAG, "Check accessibility failed", e)
@@ -138,11 +139,13 @@ class FloatWindowService : Service() {
     }
 
     private fun showCropView() {
+        Log.d(TAG, "showCropView called")
         if (isShowingCrop) return
         isShowingCrop = true
 
-        // 隐藏悬浮球，避免挡在遮罩层上面
+        // 隐藏悬浮球
         floatBall?.visibility = View.GONE
+        Log.d(TAG, "Float ball hidden")
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -159,30 +162,34 @@ class FloatWindowService : Service() {
 
         cropView = CropOverlayView(this).apply {
             onCropConfirmed = { rect ->
+                Log.d(TAG, "Crop confirmed: $rect")
                 hideCropView()
                 captureAndSearch(rect)
             }
             onCropCanceled = {
+                Log.d(TAG, "Crop canceled")
                 hideCropView()
             }
         }
 
         try {
             windowManager.addView(cropView, params)
-            Log.d(TAG, "Crop view shown")
+            Log.d(TAG, "Crop view added successfully")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to show crop view", e)
+            Log.e(TAG, "Failed to add crop view", e)
             isShowingCrop = false
             floatBall?.visibility = View.VISIBLE
-            Toast.makeText(this, "框选层显示失败", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "框选层显示失败: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun hideCropView() {
+        Log.d(TAG, "hideCropView called")
         isShowingCrop = false
         cropView?.let {
             try {
                 windowManager.removeView(it)
+                Log.d(TAG, "Crop view removed")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to remove crop view", e)
             }
@@ -190,10 +197,11 @@ class FloatWindowService : Service() {
         }
         // 恢复显示悬浮球
         floatBall?.visibility = View.VISIBLE
+        Log.d(TAG, "Float ball visible again")
     }
 
     private fun captureAndSearch(rect: Rect) {
-        Log.d(TAG, "Capture area: $rect")
+        Log.d(TAG, "captureAndSearch: $rect")
         
         if (ScreenCaptureService.isRunning) {
             sendBroadcast(Intent("com.questionhelper.CAPTURE_SCREEN").apply {
@@ -208,14 +216,22 @@ class FloatWindowService : Service() {
         }
     }
 
+    /**
+     * 关键修复：onTouch 中手动处理点击事件
+     * 如果 onTouch 返回 true，onClickListener 永远不会被调用
+     * 所以在 ACTION_UP 时如果是点击，手动执行 onFloatBallClick()
+     */
     private inner class FloatBallTouchListener(
-        private val params: WindowManager.LayoutParams
+        private val params: WindowManager.LayoutParams,
+        private val view: View
     ) : View.OnTouchListener {
         private var initialX = 0
         private var initialY = 0
         private var touchX = 0f
         private var touchY = 0f
         private var isClick = false
+        private val clickThreshold = 15f  // 移动超过这个距离不算点击
+        private val longPressThreshold = 300L  // 长按阈值，暂不用
 
         override fun onTouch(v: View, event: MotionEvent): Boolean {
             when (event.action) {
@@ -230,16 +246,24 @@ class FloatWindowService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - touchX
                     val dy = event.rawY - touchY
-                    if (kotlin.math.abs(dx) > 10 || kotlin.math.abs(dy) > 10) {
+                    
+                    // 移动超过阈值，不算点击
+                    if (kotlin.math.abs(dx) > clickThreshold || kotlin.math.abs(dy) > clickThreshold) {
                         isClick = false
                     }
+                    
                     params.x = initialX + dx.toInt()
                     params.y = initialY + dy.toInt()
-                    windowManager.updateViewLayout(v, params)
+                    windowManager.updateViewLayout(view, params)
                     return true
                 }
                 MotionEvent.ACTION_UP -> {
-                    return isClick
+                    if (isClick) {
+                        // 手动触发点击逻辑
+                        Log.d(TAG, "Touch is click, triggering onFloatBallClick")
+                        onFloatBallClick()
+                    }
+                    return true
                 }
             }
             return false
