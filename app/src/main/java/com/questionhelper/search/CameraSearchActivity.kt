@@ -91,10 +91,10 @@ class CameraSearchActivity : ComponentActivity() {
                     if (question != null) {
                         showResult(question.content, question.answer, question.analysis)
                     } else {
-                        showResult(text, "未在题库中找到匹配题目", "建议：
+                        showResult(text, "未在题库中找到匹配题目", """建议：
 1. 检查题目是否已导入
 2. 尝试截取更清晰的题目区域
-3. 手动搜索关键词")
+3. 手动搜索关键词""")
                     }
                 } else {
                     Toast.makeText(this@CameraSearchActivity, "未识别到文字", Toast.LENGTH_SHORT).show()
