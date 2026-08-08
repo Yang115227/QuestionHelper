@@ -49,16 +49,14 @@ class AccessibilitySearchService : AccessibilityService() {
     private fun captureWithAccessibility(rect: Rect) {
         takeScreenshot(Display.DEFAULT_DISPLAY, ContextCompat.getMainExecutor(this),
             object : TakeScreenshotCallback {
-                override fun onCaptureSuccess(screenshotResult: ScreenshotResult) {
-                    val bitmap = screenshotResult.bitmap
-                    if (bitmap != null) {
-                        try {
-                            val cropped = Bitmap.createBitmap(bitmap, rect.left, rect.top, rect.width(), rect.height())
-                            bitmap.recycle()
-                            processBitmap(cropped)
-                        } catch (e: Exception) {
-                            Log.e("Accessibility", "Crop failed", e)
-                        }
+                override fun onSuccess(screenshotResult: ScreenshotResult) {
+                    val bmp = screenshotResult.bitmap ?: return
+                    try {
+                        val cropped = Bitmap.createBitmap(bmp, rect.left, rect.top, rect.width(), rect.height())
+                        bmp.recycle()
+                        processBitmap(cropped)
+                    } catch (e: Exception) {
+                        Log.e("Accessibility", "Crop failed", e)
                     }
                 }
                 override fun onFailure(errorCode: Int) {
