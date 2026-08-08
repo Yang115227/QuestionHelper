@@ -19,6 +19,7 @@ import com.questionhelper.R
 class FloatWindowService : Service() {
     private lateinit var windowManager: WindowManager
     private var floatBall: View? = null
+    private var floatBallParams: WindowManager.LayoutParams? = null
     private var cropView: CropOverlayView? = null
     private var isShowingCrop = false
 
@@ -71,12 +72,13 @@ class FloatWindowService : Service() {
         val button = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_search)
             background = createCircleBackground()
-            alpha = 0.85f
+            alpha = 0.9f
             setOnClickListener { onFloatBallClick() }
             setOnTouchListener(FloatBallTouchListener(params))
         }
 
         floatBall = button
+        floatBallParams = params
         try {
             windowManager.addView(button, params)
         } catch (e: Exception) {
@@ -122,13 +124,12 @@ class FloatWindowService : Service() {
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             ) ?: return false
             
-            // 使用完整类名匹配，避免字符串写错
             val componentName = android.content.ComponentName(
                 this, 
                 AccessibilitySearchService::class.java
             ).flattenToString()
             
-            Log.d(TAG, "Checking accessibility: $componentName in [$enabledServices]")
+            Log.d(TAG, "Checking accessibility: $componentName")
             enabledServices.contains(componentName)
         } catch (e: Exception) {
             Log.e(TAG, "Check accessibility failed", e)
@@ -140,6 +141,9 @@ class FloatWindowService : Service() {
         if (isShowingCrop) return
         isShowingCrop = true
 
+        // 隐藏悬浮球，避免挡在遮罩层上面
+        floatBall?.visibility = View.GONE
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -149,7 +153,7 @@ class FloatWindowService : Service() {
                 WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         )
 
@@ -169,6 +173,7 @@ class FloatWindowService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to show crop view", e)
             isShowingCrop = false
+            floatBall?.visibility = View.VISIBLE
             Toast.makeText(this, "框选层显示失败", Toast.LENGTH_SHORT).show()
         }
     }
@@ -183,6 +188,8 @@ class FloatWindowService : Service() {
             }
             cropView = null
         }
+        // 恢复显示悬浮球
+        floatBall?.visibility = View.VISIBLE
     }
 
     private fun captureAndSearch(rect: Rect) {

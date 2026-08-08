@@ -24,7 +24,7 @@ class CropOverlayView @JvmOverloads constructor(
     }
     
     private val overlayPaint = Paint().apply {
-        color = Color.parseColor("#B3000000")
+        color = Color.parseColor("#CC000000")  // 半透明黑
     }
     
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -38,13 +38,27 @@ class CropOverlayView @JvmOverloads constructor(
         strokeWidth = 3f
     }
 
+    private val crossPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#66FFFFFF")
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = 56f
+        textAlign = Paint.Align.CENTER
+        isFakeBoldText = true
+        setShadowLayer(8f, 0f, 0f, Color.BLACK)
+    }
+
     private var startX = 0f
     private var startY = 0f
     private var endX = 0f
     private var endY = 0f
     private var isDragging = false
     private var activeHandle: Handle? = null
-    private val handleRadius = 24f
+    private val handleRadius = 28f
     private val minSize = 60f
 
     private enum class Handle { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, CENTER, NONE }
@@ -63,7 +77,7 @@ class CropOverlayView @JvmOverloads constructor(
                     FrameLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
                     gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
-                    bottomMargin = dpToPx(120)
+                    bottomMargin = dpToPx(140)
                 }
             }
 
@@ -71,8 +85,8 @@ class CropOverlayView @JvmOverloads constructor(
                 text = "取消"
                 setOnClickListener { onCropCanceled?.invoke() }
                 layoutParams = LinearLayout.LayoutParams(
-                    dpToPx(100), LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { marginEnd = dpToPx(16) }
+                    dpToPx(110), LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dpToPx(20) }
             }
 
             val confirmBtn = Button(context).apply {
@@ -83,7 +97,7 @@ class CropOverlayView @JvmOverloads constructor(
                     }
                 }
                 layoutParams = LinearLayout.LayoutParams(
-                    dpToPx(120), LinearLayout.LayoutParams.WRAP_CONTENT
+                    dpToPx(130), LinearLayout.LayoutParams.WRAP_CONTENT
                 )
             }
 
@@ -95,26 +109,31 @@ class CropOverlayView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        
         if (!hasSelection()) {
-            val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.WHITE
-                textSize = 48f
-                textAlign = Paint.Align.CENTER
-            }
-            canvas.drawText("拖动选择题目区域", width / 2f, height / 2f - 60, textPaint)
-            canvas.drawText("松开后可调整边角", width / 2f, height / 2f, textPaint)
+            // 初始状态：全屏遮罩 + 十字线 + 文字提示
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), overlayPaint)
+            
+            // 画十字辅助线
+            val cx = width / 2f
+            val cy = height / 2f
+            canvas.drawLine(cx - 100, cy, cx + 100, cy, crossPaint)
+            canvas.drawLine(cx, cy - 100, cx, cy + 100, crossPaint)
+            
+            canvas.drawText("👆 拖动选择题目区域", cx, cy - 100, textPaint)
+            canvas.drawText("松开后可拖动边角调整", cx, cy - 30, textPaint)
             return
         }
 
         val rect = getSelectionRect()
 
-        // 暗色遮罩
+        // 四块暗色遮罩（挖空中间选中区域）
         canvas.drawRect(0f, 0f, width.toFloat(), rect.top.toFloat(), overlayPaint)
         canvas.drawRect(0f, rect.top.toFloat(), rect.left.toFloat(), rect.bottom.toFloat(), overlayPaint)
         canvas.drawRect(rect.right.toFloat(), rect.top.toFloat(), width.toFloat(), rect.bottom.toFloat(), overlayPaint)
         canvas.drawRect(0f, rect.bottom.toFloat(), width.toFloat(), height.toFloat(), overlayPaint)
 
-        // 选中框
+        // 选中框边框
         canvas.drawRect(rect, borderPaint)
 
         // 四个角手柄
@@ -152,39 +171,50 @@ class CropOverlayView @JvmOverloads constructor(
                 
                 when (activeHandle) {
                     Handle.TOP_LEFT -> {
-                        startX = event.x
-                        startY = event.y
+                        startX = event.x.coerceIn(0f, endX - minSize)
+                        startY = event.y.coerceIn(0f, endY - minSize)
                     }
                     Handle.TOP_RIGHT -> {
-                        endX = event.x
-                        startY = event.y
+                        endX = event.x.coerceIn(startX + minSize, width.toFloat())
+                        startY = event.y.coerceIn(0f, endY - minSize)
                     }
                     Handle.BOTTOM_LEFT -> {
-                        startX = event.x
-                        endY = event.y
+                        startX = event.x.coerceIn(0f, endX - minSize)
+                        endY = event.y.coerceIn(startY + minSize, height.toFloat())
                     }
                     Handle.BOTTOM_RIGHT -> {
-                        endX = event.x
-                        endY = event.y
+                        endX = event.x.coerceIn(startX + minSize, width.toFloat())
+                        endY = event.y.coerceIn(startY + minSize, height.toFloat())
                     }
                     Handle.CENTER -> {
-                        val width = endX - startX
-                        val height = endY - startY
-                        startX = event.x - width / 2
-                        startY = event.y - height / 2
-                        endX = startX + width
-                        endY = startY + height
+                        val dx = event.x - startX
+                        val dy = event.y - startY
+                        val w = endX - startX
+                        val h = endY - startY
+                        
+                        var newStartX = startX + dx
+                        var newStartY = startY + dy
+                        var newEndX = newStartX + w
+                        var newEndY = newStartY + h
+                        
+                        // 边界限制
+                        if (newStartX < 0) { newStartX = 0f; newEndX = w }
+                        if (newStartY < 0) { newStartY = 0f; newEndY = h }
+                        if (newEndX > width) { newEndX = width.toFloat(); newStartX = newEndX - w }
+                        if (newEndY > height) { newEndY = height.toFloat(); newStartY = newEndY - h }
+                        
+                        startX = newStartX
+                        startY = newStartY
+                        endX = newEndX
+                        endY = newEndY
+                        startX = event.x
+                        startY = event.y
                     }
                     else -> {
-                        endX = event.x
-                        endY = event.y
+                        endX = event.x.coerceIn(0f, width.toFloat())
+                        endY = event.y.coerceIn(0f, height.toFloat())
                     }
                 }
-                
-                startX = startX.coerceIn(0f, width.toFloat())
-                startY = startY.coerceIn(0f, height.toFloat())
-                endX = endX.coerceIn(0f, width.toFloat())
-                endY = endY.coerceIn(0f, height.toFloat())
                 
                 invalidate()
                 return true
