@@ -3,17 +3,21 @@ package com.questionhelper.bank
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.questionhelper.QuestionApp
 import com.questionhelper.data.Question
 import com.questionhelper.data.QuestionRepository
@@ -23,12 +27,11 @@ import kotlinx.coroutines.launch
 class PracticeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val mode = intent.getStringExtra("mode") ?: "single"
-        val questionId = intent.getLongExtra("questionId", -1)
+        val mode = intent.getStringExtra("mode") ?: "order"
         val subject = intent.getStringExtra("subject") ?: "全部"
         setContent {
             QuestionHelperTheme {
-                PracticeScreen(mode = mode, initialQuestionId = questionId, subject = subject)
+                PracticeScreen(mode = mode, subject = subject)
             }
         }
     }
@@ -36,7 +39,7 @@ class PracticeActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PracticeScreen(mode: String, initialQuestionId: Long, subject: String) {
+fun PracticeScreen(mode: String, subject: String) {
     val context = LocalContext.current
     val repo = remember { QuestionRepository(QuestionApp.database.questionDao()) }
     val scope = rememberCoroutineScope()
@@ -44,44 +47,23 @@ fun PracticeScreen(mode: String, initialQuestionId: Long, subject: String) {
     var questions by remember { mutableStateOf<List<Question>>(emptyList()) }
     var currentIndex by remember { mutableIntStateOf(0) }
     var isLoading by remember { mutableStateOf(true) }
-    
     var showAnswer by remember { mutableStateOf(false) }
     var selectedOption by remember { mutableStateOf<String?>(null) }
     var isCorrect by remember { mutableStateOf<Boolean?>(null) }
 
-    // 加载题目列表
+    // 加载题目
     LaunchedEffect(mode, subject) {
         isLoading = true
         questions = when (mode) {
             "order" -> repo.getOrderedQuestions(subject)
             "random" -> repo.getRandomQuestions(subject)
-            "wrong" -> emptyList() // 错题由下方的 LaunchedEffect 单独处理
-            else -> {
-                // single 模式
-                val q = repo.getQuestionById(initialQuestionId)
-                listOfNotNull(q)
-            }
+            else -> repo.getOrderedQuestions(subject)
         }
         isLoading = false
-        
-        // 如果是单题模式，找到对应索引
-        if (mode == "single" && initialQuestionId != -1L) {
-            currentIndex = questions.indexOfFirst { it.id == initialQuestionId }.coerceAtLeast(0)
-        }
-    }
-
-    // 错题模式单独处理
-    LaunchedEffect(mode) {
-        if (mode == "wrong") {
-            isLoading = true
-            val wrongList = mutableListOf<Question>()
-            repo.wrongQuestions.collect {
-                wrongList.clear()
-                wrongList.addAll(it)
-                questions = wrongList.toList()
-                isLoading = false
-            }
-        }
+        currentIndex = 0
+        showAnswer = false
+        selectedOption = null
+        isCorrect = null
     }
 
     val currentQuestion = questions.getOrNull(currentIndex)
@@ -91,19 +73,20 @@ fun PracticeScreen(mode: String, initialQuestionId: Long, subject: String) {
             TopAppBar(
                 title = { 
                     Text(
-                        when (mode) {
-                            "order" -> "顺序练习 (${currentIndex + 1}/${questions.size})"
-                            "random" -> "随机练习 (${currentIndex + 1}/${questions.size})"
-                            "wrong" -> "错题重做 (${currentIndex + 1}/${questions.size})"
-                            else -> "题目详情"
-                        }
+                        "${subject} (${currentIndex + 1}/${questions.size})",
+                        fontSize = 17.sp
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { (context as? ComponentActivity)?.finish() }) {
+                    IconButton(onClick = { 
+                        (context as? ComponentActivity)?.finish() 
+                    }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.White
+                )
             )
         }
     ) { padding ->
@@ -122,17 +105,11 @@ fun PracticeScreen(mode: String, initialQuestionId: Long, subject: String) {
                         modifier = Modifier.align(Alignment.Center),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(
-                            Icons.Default.Inbox,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
                         Text("暂无题目", style = MaterialTheme.typography.titleMedium)
-                        if (mode == "wrong") {
-                            Text("错题本为空，快去练习吧！", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                        Text(
+                            "该分类下没有题目",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
                 currentQuestion != null -> {
@@ -141,65 +118,104 @@ fun PracticeScreen(mode: String, initialQuestionId: Long, subject: String) {
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
                     ) {
-                        // 题目卡片
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        // 题目
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFFF5F5F5)
+                            ),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
-                                    "题目",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary
+                                    "${currentIndex + 1}. ${currentQuestion.content}",
+                                    fontSize = 16.sp,
+                                    lineHeight = 24.sp
                                 )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    currentQuestion.content,
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                                
-                                // 选项
-                                if (currentQuestion.options.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    val options = currentQuestion.options.split("|")
-                                    options.forEachIndexed { index, opt ->
-                                        val optLetter = ('A' + index).toString()
-                                        val isSelected = selectedOption == optLetter
-                                        val isAnswer = showAnswer && optLetter == currentQuestion.answer.trim()
-                                        
-                                        Card(
-                                            onClick = {
-                                                if (!showAnswer) {
-                                                    selectedOption = optLetter
-                                                }
-                                            },
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 4.dp),
-                                            colors = CardDefaults.cardColors(
-                                                containerColor = when {
-                                                    isAnswer -> MaterialTheme.colorScheme.primaryContainer
-                                                    isSelected && !showAnswer -> MaterialTheme.colorScheme.secondaryContainer
-                                                    else -> MaterialTheme.colorScheme.surfaceVariant
-                                                }
-                                            )
-                                        ) {
-                                            Text(
-                                                opt.trim(),
-                                                modifier = Modifier.padding(12.dp),
-                                                color = when {
-                                                    isAnswer -> MaterialTheme.colorScheme.primary
-                                                    isSelected && showAnswer && !isAnswer -> MaterialTheme.colorScheme.error
-                                                    else -> MaterialTheme.colorScheme.onSurface
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
                             }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
 
+                        // 选项
+                        if (currentQuestion.options.isNotEmpty()) {
+                            val options = currentQuestion.options.split("|")
+                            options.forEach { opt ->
+                                val optLetter = opt.substringBefore(".").trim()
+                                val optText = opt.substringAfter(".").trim()
+                                val isSelected = selectedOption == optLetter
+                                val isAnswer = showAnswer && optLetter == currentQuestion.answer.trim()
+
+                                Card(
+                                    onClick = {
+                                        if (!showAnswer) {
+                                            selectedOption = optLetter
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = when {
+                                            isAnswer -> Color(0xFFE8F5E9)
+                                            isSelected && !showAnswer -> Color(0xFFE3F2FD)
+                                            isSelected && showAnswer && !isAnswer -> Color(0xFFFFEBEE)
+                                            else -> Color.White
+                                        }
+                                    ),
+                                    border = if (isSelected || isAnswer) {
+                                        BorderStroke(
+                                            1.5.dp,
+                                            when {
+                                                isAnswer -> Color(0xFF4CAF50)
+                                                isSelected && !showAnswer -> Color(0xFF2196F3)
+                                                else -> Color(0xFFF44336)
+                                            }
+                                        )
+                                    } else null
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "$optLetter.",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = when {
+                                                isAnswer -> Color(0xFF4CAF50)
+                                                isSelected && showAnswer && !isAnswer -> Color(0xFFF44336)
+                                                isSelected -> Color(0xFF2196F3)
+                                                else -> Color(0xFF212121)
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = optText,
+                                            fontSize = 15.sp,
+                                            color = when {
+                                                isAnswer -> Color(0xFF4CAF50)
+                                                isSelected && showAnswer && !isAnswer -> Color(0xFFF44336)
+                                                else -> Color(0xFF424242)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            // 判断题/填空题没有选项
+                            OutlinedTextField(
+                                value = selectedOption ?: "",
+                                onValueChange = { if (!showAnswer) selectedOption = it },
+                                label = { Text("请输入答案") },
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !showAnswer
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
                         if (!showAnswer) {
-                            // 提交答案按钮
                             Button(
                                 onClick = {
                                     if (selectedOption != null) {
@@ -213,49 +229,51 @@ fun PracticeScreen(mode: String, initialQuestionId: Long, subject: String) {
                                     }
                                 },
                                 enabled = selectedOption != null,
-                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                                shape = MaterialTheme.shapes.medium
                             ) {
-                                Text("提交答案")
+                                Text("提交答案", fontSize = 16.sp)
                             }
                         } else {
-                            // 答案展示
+                            // 答案解析
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (isCorrect == true) 
-                                        MaterialTheme.colorScheme.primaryContainer 
-                                    else 
-                                        MaterialTheme.colorScheme.errorContainer
+                                        Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
                                 )
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Text(
                                         if (isCorrect == true) "✓ 回答正确" else "✗ 回答错误",
-                                        color = if (isCorrect == true) 
-                                            MaterialTheme.colorScheme.primary 
-                                        else 
-                                            MaterialTheme.colorScheme.error,
-                                        style = MaterialTheme.typography.titleMedium
+                                        color = if (isCorrect == true) Color(0xFF4CAF50) else Color(0xFFF44336),
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Medium
                                     )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text("正确答案：${currentQuestion.answer}")
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        "正确答案：${currentQuestion.answer}",
+                                        fontSize = 15.sp
+                                    )
                                 }
                             }
 
                             if (currentQuestion.analysis.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(16.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
                                 Card(modifier = Modifier.fillMaxWidth()) {
                                     Column(modifier = Modifier.padding(16.dp)) {
-                                        Text("解析", style = MaterialTheme.typography.titleSmall)
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text(currentQuestion.analysis)
+                                        Text("解析", fontWeight = FontWeight.Medium)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(currentQuestion.analysis, fontSize = 14.sp, lineHeight = 20.sp)
                                     }
                                 }
                             }
 
                             Spacer(modifier = Modifier.height(24.dp))
 
-                            // 导航按钮
+                            // 底部导航
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
@@ -264,24 +282,28 @@ fun PracticeScreen(mode: String, initialQuestionId: Long, subject: String) {
                                     onClick = {
                                         if (currentIndex > 0) {
                                             currentIndex--
-                                            resetState()
+                                            resetPracticeState(
+                                                { showAnswer = it },
+                                                { selectedOption = it },
+                                                { isCorrect = it }
+                                            )
                                         }
                                     },
                                     enabled = currentIndex > 0
                                 ) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = null)
-                                    Spacer(modifier = Modifier.width(4.dp))
                                     Text("上一题")
                                 }
 
                                 if (currentIndex < questions.size - 1) {
                                     Button(onClick = {
                                         currentIndex++
-                                        resetState()
+                                        resetPracticeState(
+                                            { showAnswer = it },
+                                            { selectedOption = it },
+                                            { isCorrect = it }
+                                        )
                                     }) {
                                         Text("下一题")
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Icon(Icons.Default.ArrowForward, contentDescription = null)
                                     }
                                 } else {
                                     Button(onClick = {
@@ -299,6 +321,12 @@ fun PracticeScreen(mode: String, initialQuestionId: Long, subject: String) {
     }
 }
 
-private fun resetState() {
-    // 通过重组重置状态，这里不需要额外操作，因为currentIndex变化会触发重组
+private fun resetPracticeState(
+    setShowAnswer: (Boolean) -> Unit,
+    setSelectedOption: (String?) -> Unit,
+    setIsCorrect: (Boolean?) -> Unit
+) {
+    setShowAnswer(false)
+    setSelectedOption(null)
+    setIsCorrect(null)
 }
