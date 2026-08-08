@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -54,9 +55,10 @@ fun QuestionBankScreen() {
     var selectedSubject by remember { mutableStateOf<SubjectItem?>(null) }
     var practiceMode by remember { mutableStateOf("order") } // "order" 或 "random"
 
-    // 加载各分类及题目数量
-    LaunchedEffect(Unit) {
-        val allQuestions = repo.allQuestions.value ?: emptyList()
+    // 监听题目数据变化，更新分类列表
+    val allQuestions by repo.allQuestions.collectAsState(initial = emptyList())
+
+    LaunchedEffect(allQuestions) {
         val grouped = allQuestions.groupBy { it.subject }
         subjects = grouped.map { (name, list) ->
             SubjectItem(name, list.size)
