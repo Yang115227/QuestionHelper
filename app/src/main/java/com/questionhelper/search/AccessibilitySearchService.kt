@@ -15,6 +15,7 @@ import android.view.Display
 import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
+import java.lang.reflect.Field
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import com.questionhelper.QuestionApp
@@ -39,21 +40,20 @@ class AccessibilitySearchService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         ocrManager = OcrManager(this)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             registerReceiver(captureReceiver, IntentFilter("com.questionhelper.ACCESSIBILITY_CAPTURE"),
                 Context.RECEIVER_NOT_EXPORTED)
         }
         Toast.makeText(this, "无障碍搜题服务已启动", Toast.LENGTH_SHORT).show()
     }
 
-    @RequiresApi(Build.VERSION_CODES.R)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun captureWithAccessibility(rect: Rect) {
         takeScreenshot(Display.DEFAULT_DISPLAY, ContextCompat.getMainExecutor(this),
             object : TakeScreenshotCallback {
                 override fun onSuccess(screenshotResult: ScreenshotResult) {
-                    val bmp = screenshotResult.bitmap
-                    if (bmp == null) return
                     try {
+                        val bmp = getScreenshotBitmap(screenshotResult) ?: return
                         val cropped = Bitmap.createBitmap(bmp, rect.left, rect.top, rect.width(), rect.height())
                         bmp.recycle()
                         processBitmap(cropped)
@@ -66,6 +66,17 @@ class AccessibilitySearchService : AccessibilityService() {
                 }
             }
         )
+    }
+
+    private fun getScreenshotBitmap(result: ScreenshotResult): Bitmap? {
+        return try {
+            val field: Field = result.javaClass.getDeclaredField("bitmap")
+            field.isAccessible = true
+            field.get(result) as? Bitmap
+        } catch (e: Exception) {
+            Log.e("Accessibility", "Failed to get screenshot bitmap", e)
+            null
+        }
     }
 
     private fun processBitmap(bitmap: Bitmap) {
@@ -96,7 +107,7 @@ class AccessibilitySearchService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             unregisterReceiver(captureReceiver)
         }
         ocrManager.close()

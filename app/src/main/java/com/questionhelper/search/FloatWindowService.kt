@@ -121,7 +121,7 @@ class FloatWindowService : Service() {
             sendBroadcast(Intent("com.questionhelper.CAPTURE_SCREEN").apply {
                 putExtra("rect", rect)
             })
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             // 尝试无障碍截图
             sendBroadcast(Intent("com.questionhelper.ACCESSIBILITY_CAPTURE").apply {
                 putExtra("rect", rect)
