@@ -3,6 +3,7 @@ package com.questionhelper.search
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.*
+import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.view.Gravity
 import android.view.MotionEvent
