@@ -57,6 +57,13 @@ fun PracticeScreen(mode: String, subject: String) {
         questions = when (mode) {
             "order" -> repo.getOrderedQuestions(subject)
             "random" -> repo.getRandomQuestions(subject)
+            "single" -> {
+                val activity = context as? ComponentActivity
+                val questionId = activity?.intent?.getLongExtra("questionId", -1) ?: -1L
+                if (questionId > 0) {
+                    repo.getQuestionById(questionId)?.let { listOf(it) } ?: emptyList()
+                } else emptyList()
+            }
             else -> repo.getOrderedQuestions(subject)
         }
         isLoading = false

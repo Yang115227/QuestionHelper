@@ -61,6 +61,16 @@ interface QuestionDao {
 
     @Query("SELECT * FROM questions ORDER BY RANDOM()")
     suspend fun getAllQuestionsRandom(): List<Question>
+
+    // ===== 新增：按分类管理 =====
+    @Query("DELETE FROM questions WHERE subject = :subject")
+    suspend fun deleteQuestionsBySubject(subject: String)
+
+    @Query("SELECT COUNT(*) FROM questions WHERE subject = :subject")
+    suspend fun getQuestionCountBySubject(subject: String): Int
+
+    @Query("SELECT * FROM questions WHERE subject = :subject ORDER BY createTime DESC LIMIT 1")
+    suspend fun getLatestQuestionBySubject(subject: String): Question?
 }
 
 @Dao
