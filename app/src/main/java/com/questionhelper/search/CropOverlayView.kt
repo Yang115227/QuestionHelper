@@ -1,8 +1,8 @@
 package com.questionhelper.search
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.*
-import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.view.Gravity
 import android.view.MotionEvent
@@ -17,7 +17,9 @@ class CropOverlayView @JvmOverloads constructor(
     var onCropConfirmed: ((Rect) -> Unit)? = null
     var onCropCanceled: (() -> Unit)? = null
 
-    // 绘制相关
+    private val prefs: SharedPreferences = context.getSharedPreferences("crop_prefs", Context.MODE_PRIVATE)
+
+    // 绘制
     private val overlayPaint = Paint().apply { color = Color.parseColor("#B3000000") }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#2196F3")
@@ -38,19 +40,13 @@ class CropOverlayView @JvmOverloads constructor(
         style = Paint.Style.STROKE
         strokeWidth = 3f
     }
-    private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        style = Paint.Style.STROKE
-        strokeWidth = 4f
-        strokeCap = Paint.Cap.ROUND
-    }
 
     // 选区框
     private var cropRect = Rect()
     private val minCropSize = dpToPx(80)
     private val handleRadius = dpToPx(18).toFloat()
 
-    // 触摸状态
+    // 触摸
     private enum class TouchMode { NONE, DRAG, RESIZE }
     private var touchMode = TouchMode.NONE
     private var lastX = 0f
@@ -61,13 +57,8 @@ class CropOverlayView @JvmOverloads constructor(
         setupUI()
     }
 
-    fun setInitialRect(rect: Rect) {
-        cropRect.set(rect)
-        invalidate()
-    }
-
     private fun setupUI() {
-        // 顶部工具栏
+        // 顶部工具栏（嵌入到遮罩顶部）
         val topBar = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -77,10 +68,9 @@ class CropOverlayView @JvmOverloads constructor(
                 dpToPx(52)
             ).apply {
                 gravity = Gravity.TOP
-                topMargin = dpToPx(32)
             }
 
-            // 回到选框按钮（重置选区）
+            // 回到选框按钮
             val backBtn = ImageButton(context).apply {
                 setImageResource(android.R.drawable.ic_menu_revert)
                 setBackgroundColor(Color.TRANSPARENT)
@@ -118,7 +108,7 @@ class CropOverlayView @JvmOverloads constructor(
         }
         addView(topBar)
 
-        // 确认搜题按钮（底部中央）
+        // 确认搜题按钮（底部中央，嵌入在遮罩底部）
         val confirmBtn = Button(context).apply {
             text = "确认搜题"
             setTextColor(Color.WHITE)
@@ -134,13 +124,15 @@ class CropOverlayView @JvmOverloads constructor(
             }
             setOnClickListener {
                 if (cropRect.width() >= minCropSize && cropRect.height() >= minCropSize) {
+                    // 保存记忆
+                    saveCropRect()
                     onCropConfirmed?.invoke(cropRect)
                 }
             }
         }
         addView(confirmBtn)
 
-        // 隐藏按钮（左下角，回到悬浮球）
+        // 隐藏按钮（左下角）
         val hideBtn = ImageButton(context).apply {
             setImageResource(android.R.drawable.ic_menu_view)
             setBackgroundColor(Color.TRANSPARENT)
@@ -154,9 +146,12 @@ class CropOverlayView @JvmOverloads constructor(
         }
         addView(hideBtn)
 
-        // 初始化选区框位置（布局完成后）
+        // 初始化选区（先默认，布局完成后再加载记忆）
         post {
-            resetCropRect()
+            loadCropRect()
+            if (cropRect.isEmpty) {
+                resetCropRect()
+            }
         }
     }
 
@@ -170,12 +165,32 @@ class CropOverlayView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun setInitialRect(rect: Rect) {
+        cropRect.set(rect)
+        invalidate()
+    }
+
+    private fun saveCropRect() {
+        prefs.edit().putString("crop_rect", "${cropRect.left},${cropRect.top},${cropRect.right},${cropRect.bottom}").apply()
+    }
+
+    private fun loadCropRect() {
+        val str = prefs.getString("crop_rect", null) ?: return
+        val parts = str.split(",")
+        if (parts.size == 4) {
+            val r = Rect(parts[0].toInt(), parts[1].toInt(), parts[2].toInt(), parts[3].toInt())
+            // 校验边界
+            if (r.left >= 0 && r.top >= 0 && r.right <= width && r.bottom <= height && r.width() > 0 && r.height() > 0) {
+                cropRect.set(r)
+            }
+        }
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-
         val r = cropRect
 
-        // 四块遮罩（挖空中间）
+        // 四块遮罩（挖空中间选区）
         canvas.drawRect(0f, 0f, width.toFloat(), r.top.toFloat(), overlayPaint)
         canvas.drawRect(0f, r.top.toFloat(), r.left.toFloat(), r.bottom.toFloat(), overlayPaint)
         canvas.drawRect(r.right.toFloat(), r.top.toFloat(), width.toFloat(), r.bottom.toFloat(), overlayPaint)
@@ -186,31 +201,20 @@ class CropOverlayView @JvmOverloads constructor(
 
         // 四角 L 形装饰线
         val cl = dpToPx(18)
-        // 左上
         canvas.drawLine(r.left.toFloat(), r.top.toFloat(), (r.left + cl).toFloat(), r.top.toFloat(), cornerPaint)
         canvas.drawLine(r.left.toFloat(), r.top.toFloat(), r.left.toFloat(), (r.top + cl).toFloat(), cornerPaint)
-        // 右上
         canvas.drawLine((r.right - cl).toFloat(), r.top.toFloat(), r.right.toFloat(), r.top.toFloat(), cornerPaint)
         canvas.drawLine(r.right.toFloat(), r.top.toFloat(), r.right.toFloat(), (r.top + cl).toFloat(), cornerPaint)
-        // 左下
         canvas.drawLine(r.left.toFloat(), (r.bottom - cl).toFloat(), r.left.toFloat(), r.bottom.toFloat(), cornerPaint)
         canvas.drawLine(r.left.toFloat(), r.bottom.toFloat(), (r.left + cl).toFloat(), r.bottom.toFloat(), cornerPaint)
-        // 右下
         canvas.drawLine((r.right - cl).toFloat(), r.bottom.toFloat(), r.right.toFloat(), r.bottom.toFloat(), cornerPaint)
         canvas.drawLine(r.right.toFloat(), (r.bottom - cl).toFloat(), r.right.toFloat(), r.bottom.toFloat(), cornerPaint)
 
-        // 右下角缩放手柄（圆形背景 + 双向箭头）
+        // 右下角缩放手柄
         val hx = r.right.toFloat()
         val hy = r.bottom.toFloat()
         canvas.drawCircle(hx, hy, handleRadius, handlePaint)
         canvas.drawCircle(hx, hy, handleRadius, handleStrokePaint)
-
-        // 画双向箭头（右下方向）
-        val offset = 6f
-        canvas.drawLine(hx - offset, hy + offset, hx + 4, hy + 14, arrowPaint)
-        canvas.drawLine(hx + 4, hy + 14, hx + 14, hy + 4, arrowPaint)
-        canvas.drawLine(hx + 14, hy + 4, hx + 14, hy + 10, arrowPaint)
-        canvas.drawLine(hx + 14, hy + 4, hx + 8, hy + 4, arrowPaint)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -219,24 +223,18 @@ class CropOverlayView @JvmOverloads constructor(
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
-                // 优先检查缩放手柄
                 if (isInResizeHandle(x, y)) {
                     touchMode = TouchMode.RESIZE
                     lastX = event.x
                     lastY = event.y
-                    parent.requestDisallowInterceptTouchEvent(true)
                     return true
                 }
-
-                // 检查是否在选区框内
                 if (cropRect.contains(x, y)) {
                     touchMode = TouchMode.DRAG
                     lastX = event.x
                     lastY = event.y
-                    parent.requestDisallowInterceptTouchEvent(true)
                     return true
                 }
-
                 return false
             }
             MotionEvent.ACTION_MOVE -> {
@@ -244,25 +242,15 @@ class CropOverlayView @JvmOverloads constructor(
                     TouchMode.DRAG -> {
                         val dx = (event.x - lastX).toInt()
                         val dy = (event.y - lastY).toInt()
-
                         var newLeft = cropRect.left + dx
                         var newTop = cropRect.top + dy
                         var newRight = newLeft + cropRect.width()
                         var newBottom = newTop + cropRect.height()
 
-                        // 边界限制
-                        if (newLeft < 0) {
-                            newLeft = 0; newRight = cropRect.width()
-                        }
-                        if (newTop < 0) {
-                            newTop = 0; newBottom = cropRect.height()
-                        }
-                        if (newRight > width) {
-                            newRight = width; newLeft = width - cropRect.width()
-                        }
-                        if (newBottom > height) {
-                            newBottom = height; newTop = height - cropRect.height()
-                        }
+                        if (newLeft < 0) { newLeft = 0; newRight = cropRect.width() }
+                        if (newTop < 0) { newTop = 0; newBottom = cropRect.height() }
+                        if (newRight > width) { newRight = width; newLeft = width - cropRect.width() }
+                        if (newBottom > height) { newBottom = height; newTop = height - cropRect.height() }
 
                         cropRect.set(newLeft, newTop, newRight, newBottom)
                         lastX = event.x
@@ -270,16 +258,8 @@ class CropOverlayView @JvmOverloads constructor(
                         invalidate()
                     }
                     TouchMode.RESIZE -> {
-                        val newRight = event.x.toInt().coerceIn(
-                            cropRect.left + minCropSize,
-                            width
-                        )
-                        val newBottom = event.y.toInt().coerceIn(
-                            cropRect.top + minCropSize,
-                            height
-                        )
-                        cropRect.right = newRight
-                        cropRect.bottom = newBottom
+                        cropRect.right = event.x.toInt().coerceIn(cropRect.left + minCropSize, width)
+                        cropRect.bottom = event.y.toInt().coerceIn(cropRect.top + minCropSize, height)
                         invalidate()
                     }
                     else -> {}

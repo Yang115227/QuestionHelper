@@ -3,7 +3,6 @@ package com.questionhelper.search
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Build
@@ -23,13 +22,10 @@ class FloatWindowService : Service() {
     private var floatBall: View? = null
     private var cropView: CropOverlayView? = null
     private var isShowingCrop = false
-    private lateinit var prefs: SharedPreferences
     private val handler = Handler(Looper.getMainLooper())
 
     companion object {
         private const val TAG = "FloatWindow"
-        private const val PREFS_NAME = "crop_prefs"
-        private const val KEY_CROP_RECT = "crop_rect"
         
         fun checkPermission(context: Context): Boolean {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -55,7 +51,6 @@ class FloatWindowService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         showFloatBall()
     }
 
@@ -148,25 +143,13 @@ class FloatWindowService : Service() {
             PixelFormat.TRANSLUCENT
         )
 
-        // 读取记忆的选区
-        val savedRect = loadCropRect()
-        
         cropView = CropOverlayView(this).apply {
-            if (savedRect != null) {
-                setInitialRect(savedRect)
-            }
             onCropConfirmed = { rect ->
-                // 关键修复：先保存选区，再移除框选层，最后截图
-                saveCropRect(rect)
-                // 先移除框选层（防止截到框选层本身）
-                removeCropViewOnly()
-                // 延迟后截图（确保框选层已完全移除）
+                // 关键：先完全移除框选层，再截图
+                removeCropView()
                 handler.postDelayed({
                     captureAndSearch(rect)
-                    // 截图后恢复悬浮球
-                    floatBall?.visibility = View.VISIBLE
-                    isShowingCrop = false
-                }, 200)
+                }, 100)
             }
             onCropCanceled = {
                 hideCropView()
@@ -182,8 +165,7 @@ class FloatWindowService : Service() {
         }
     }
 
-    // 只移除框选层视图，不恢复悬浮球（因为截图前要完全干净）
-    private fun removeCropViewOnly() {
+    private fun removeCropView() {
         cropView?.let {
             try {
                 windowManager.removeView(it)
@@ -196,7 +178,7 @@ class FloatWindowService : Service() {
 
     private fun hideCropView() {
         isShowingCrop = false
-        removeCropViewOnly()
+        removeCropView()
         floatBall?.visibility = View.VISIBLE
     }
 
@@ -204,7 +186,6 @@ class FloatWindowService : Service() {
         Log.d(TAG, "captureAndSearch: $rect")
         
         if (ScreenCaptureService.isRunning) {
-            // 确保 Service 活着
             startService(Intent(this, ScreenCaptureService::class.java))
             Toast.makeText(this, "正在截图识别...", Toast.LENGTH_SHORT).show()
             sendBroadcast(Intent("com.questionhelper.CAPTURE_SCREEN").apply {
@@ -219,18 +200,6 @@ class FloatWindowService : Service() {
             Toast.makeText(this, "截图服务未运行", Toast.LENGTH_SHORT).show()
             floatBall?.visibility = View.VISIBLE
         }
-    }
-
-    private fun saveCropRect(rect: Rect) {
-        prefs.edit().putString(KEY_CROP_RECT, "${rect.left},${rect.top},${rect.right},${rect.bottom}").apply()
-    }
-
-    private fun loadCropRect(): Rect? {
-        val str = prefs.getString(KEY_CROP_RECT, null) ?: return null
-        val parts = str.split(",")
-        return if (parts.size == 4) {
-            Rect(parts[0].toInt(), parts[1].toInt(), parts[2].toInt(), parts[3].toInt())
-        } else null
     }
 
     private inner class FloatBallTouchListener(
