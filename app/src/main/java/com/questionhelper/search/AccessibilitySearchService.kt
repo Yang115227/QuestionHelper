@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Display
+import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 import androidx.annotation.RequiresApi
@@ -50,7 +51,8 @@ class AccessibilitySearchService : AccessibilityService() {
         takeScreenshot(Display.DEFAULT_DISPLAY, ContextCompat.getMainExecutor(this),
             object : TakeScreenshotCallback {
                 override fun onSuccess(screenshotResult: ScreenshotResult) {
-                    val bmp = screenshotResult.bitmap ?: return
+                    val bmp = screenshotResult.bitmap
+                    if (bmp == null) return
                     try {
                         val cropped = Bitmap.createBitmap(bmp, rect.left, rect.top, rect.width(), rect.height())
                         bmp.recycle()
