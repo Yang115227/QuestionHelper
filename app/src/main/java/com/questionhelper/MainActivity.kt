@@ -142,7 +142,7 @@ fun MainScreen(
                         context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
                         return@FeatureItem
                     }
-                    val hasScreenCapture = ScreenCaptureService.isRunning
+                    val hasScreenCapture = ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized
                     val hasAccessibility = isAccessibilityEnabled(context)
                     if (!hasScreenCapture && !hasAccessibility) {
                         showCaptureDialog = true

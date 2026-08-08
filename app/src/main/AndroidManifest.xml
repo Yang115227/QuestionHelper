@@ -64,6 +64,7 @@
         <!-- 悬浮窗服务 -->
         <service
             android:name=".search.FloatWindowService"
+            android:foregroundServiceType="specialUse"
             android:exported="false" />
 
     </application>

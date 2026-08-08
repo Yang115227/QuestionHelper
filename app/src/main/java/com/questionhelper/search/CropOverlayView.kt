@@ -55,6 +55,8 @@ class CropOverlayView @JvmOverloads constructor(
 
     init {
         setWillNotDraw(false)
+        // 添加半透明背景，让用户明确知道选区层已显示
+        setBackgroundColor(Color.parseColor("#40000000"))
         setupUI()
     }
 
@@ -187,8 +189,40 @@ class CropOverlayView @JvmOverloads constructor(
         }
     }
 
+    private fun hasSelection(): Boolean {
+        return cropRect.width() > 0 && cropRect.height() > 0
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+
+        if (!hasSelection()) {
+            // 初始状态：显示提示文字和虚线框
+            val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textSize = 56f
+                textAlign = Paint.Align.CENTER
+                // 文字阴影，增强可读性
+                setShadowLayer(10f, 0f, 4f, Color.BLACK)
+            }
+            canvas.drawText("👆 拖动选择题目区域", width / 2f, height / 2f - 100, textPaint)
+            canvas.drawText("松开后可拖动边角调整", width / 2f, height / 2f - 20, textPaint)
+
+            // 画一个虚线框提示可交互区域
+            val hintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#80FFFFFF")
+                style = Paint.Style.STROKE
+                strokeWidth = 4f
+                pathEffect = android.graphics.DashPathEffect(floatArrayOf(20f, 20f), 0f)
+            }
+            val hintRect = RectF(
+                width * 0.15f, height * 0.3f,
+                width * 0.85f, height * 0.6f
+            )
+            canvas.drawRoundRect(hintRect, 20f, 20f, hintPaint)
+            return
+        }
+
         val r = cropRect
 
         // 四块遮罩（挖空中间选区）
