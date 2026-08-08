@@ -1,0 +1,18 @@
+<resources>
+    <string name="app_name">搜题助手</string>
+    <string name="camera_search">拍照搜题</string>
+    <string name="float_search">悬浮搜题</string>
+    <string name="question_bank">我的题库</string>
+    <string name="settings">设置</string>
+    <string name="take_photo">拍摄题目</string>
+    <string name="import_file">导入文件</string>
+    <string name="practice">开始练习</string>
+    <string name="wrong_book">错题本</string>
+    <string name="enable_float">开启悬浮窗</string>
+    <string name="enable_accessibility">开启无障碍服务</string>
+    <string name="enable_screen_capture">开启录屏权限</string>
+    <string name="search_result">搜索结果</string>
+    <string name="answer">答案</string>
+    <string name="analysis">解析</string>
+    <string name="no_result">未找到匹配题目</string>
+</resources>

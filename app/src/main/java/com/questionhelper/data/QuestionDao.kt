@@ -1,0 +1,58 @@
+package com.questionhelper.data
+
+import androidx.room.*
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface QuestionDao {
+    @Query("SELECT * FROM questions ORDER BY createTime DESC")
+    fun getAllQuestions(): Flow<List<Question>>
+
+    @Query("SELECT * FROM questions WHERE subject = :subject ORDER BY createTime DESC")
+    fun getQuestionsBySubject(subject: String): Flow<List<Question>>
+
+    @Query("SELECT * FROM questions WHERE wrongCount > 0 ORDER BY wrongCount DESC, lastWrongTime DESC")
+    fun getWrongQuestions(): Flow<List<Question>>
+
+    @Query("SELECT * FROM questions WHERE content LIKE :keyword LIMIT 1")
+    suspend fun searchByContent(keyword: String): Question?
+
+    @Query("SELECT * FROM questions WHERE id = :id")
+    suspend fun getQuestionById(id: Long): Question?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertQuestion(question: Question): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertQuestions(questions: List<Question>)
+
+    @Update
+    suspend fun updateQuestion(question: Question)
+
+    @Delete
+    suspend fun deleteQuestion(question: Question)
+
+    @Query("SELECT DISTINCT subject FROM questions")
+    fun getAllSubjects(): Flow<List<String>>
+
+    @Query("UPDATE questions SET wrongCount = wrongCount + 1, lastWrongTime = :time WHERE id = :id")
+    suspend fun markWrong(id: Long, time: Long = System.currentTimeMillis())
+
+    @Query("UPDATE questions SET wrongCount = 0 WHERE id = :id")
+    suspend fun clearWrong(id: Long)
+
+    @Query("SELECT COUNT(*) FROM questions")
+    suspend fun getQuestionCount(): Int
+
+    @Query("SELECT COUNT(*) FROM questions WHERE wrongCount > 0")
+    suspend fun getWrongCount(): Int
+}
+
+@Dao
+interface UserRecordDao {
+    @Insert
+    suspend fun insertRecord(record: UserRecord)
+
+    @Query("SELECT * FROM user_records WHERE questionId = :questionId ORDER BY timestamp DESC")
+    fun getRecordsByQuestion(questionId: Long): Flow<List<UserRecord>>
+}
