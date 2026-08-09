@@ -45,6 +45,11 @@ android {
             // Use default debug keystore
         }
     }
+
+    ndk {
+        abiFilters += listOf("arm64-v8a")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -102,7 +107,7 @@ dependencies {
     implementation(libs.poi.ooxml)
 
     // Paddle Lite OCR
-    implementation(files("libs/paddle-lite-android.aar"))
+    implementation(files("libs/PaddlePredictor.jar"))
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
