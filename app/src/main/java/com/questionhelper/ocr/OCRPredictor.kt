@@ -112,7 +112,7 @@ class OCRPredictor(context: Context, assetPath: String) {
 
         val outputTensor = predictor.getOutput(0)
         val outputShape = outputTensor.shape()
-        val outputData = outputTensor.floatData()
+        val outputData = outputTensor.getFloatData()
 
         return postprocessDet(outputData, outputShape, bitmap.width, bitmap.height)
     }
@@ -125,7 +125,7 @@ class OCRPredictor(context: Context, assetPath: String) {
         scaledBitmap.recycle()
 
         val inputTensor = detPredictor!!.getInput(0)
-        inputTensor.resize(detInputShape)
+        inputTensor.resize(detInputShape.map { it.toLong() }.toLongArray())
         inputTensor.setData(inputData)
         return inputTensor
     }
@@ -167,12 +167,12 @@ class OCRPredictor(context: Context, assetPath: String) {
         scaledBitmap.recycle()
 
         val inputTensor = recPredictor!!.getInput(0)
-        inputTensor.resize(recInputShape)
+        inputTensor.resize(recInputShape.map { it.toLong() }.toLongArray())
         inputTensor.setData(inputData)
         recPredictor!!.run()
 
         val outputTensor = recPredictor!!.getOutput(0)
-        val outputData = outputTensor.floatData()
+        val outputData = outputTensor.getFloatData()
         val outputShape = outputTensor.shape()
 
         return decodeRecOutput(outputData, outputShape)
@@ -292,9 +292,9 @@ class OCRPredictor(context: Context, assetPath: String) {
     }
 
     fun release() {
-        detPredictor?.destroy()
-        recPredictor?.destroy()
-        clsPredictor?.destroy()
+        detPredictor = null
+        recPredictor = null
+        clsPredictor = null
     }
 
     data class Point(val x: Int, val y: Int)
