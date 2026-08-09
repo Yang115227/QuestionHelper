@@ -20,6 +20,10 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     signingConfigs {
@@ -44,10 +48,6 @@ android {
         debug {
             // Use default debug keystore
         }
-    }
-
-    ndk {
-        abiFilters += listOf("arm64-v8a")
     }
 
     compileOptions {
