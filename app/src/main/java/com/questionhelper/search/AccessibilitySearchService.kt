@@ -15,6 +15,7 @@ import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
 import com.questionhelper.QuestionApp
 import com.questionhelper.data.QuestionRepository
 import com.questionhelper.ocr.OcrManager
@@ -31,9 +32,13 @@ class AccessibilitySearchService : AccessibilityService() {
     private val captureReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == "com.questionhelper.ACCESSIBILITY_CAPTURE") {
-                val rect = intent.getParcelableExtra("rect")
+                val rect = intent.getParcelableExtra<Rect>("rect")
                 Log.d(TAG, "Capture request: $rect")
-                rect?.let { captureWithAccessibility(it) }
+                if (rect != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        captureWithAccessibility(rect)
+                    }
+                }
             }
         }
     }
@@ -80,8 +85,13 @@ class AccessibilitySearchService : AccessibilityService() {
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun captureWithAccessibility(rect: Rect) {
-        takeScreenshot(Display.DEFAULT_DISPLAY, handler) { screenshot ->
-            screenshot?.let { bitmap ->
+        takeScreenshot(Display.DEFAULT_DISPLAY, ContextCompat.getMainExecutor(this), object : TakeScreenshotCallback {
+            override fun onSuccess(screenshot: ScreenshotResult) {
+                val bitmap = getScreenshotBitmap(screenshot)
+                if (bitmap == null) {
+                    handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败，请重试", Toast.LENGTH_SHORT).show() }
+                    return
+                }
                 try {
                     val safeRect = Rect(
                         rect.left.coerceIn(0, bitmap.width),
@@ -89,23 +99,35 @@ class AccessibilitySearchService : AccessibilityService() {
                         rect.right.coerceIn(0, bitmap.width),
                         rect.bottom.coerceIn(0, bitmap.height)
                     )
-
                     if (safeRect.width() > 0 && safeRect.height() > 0) {
                         val cropped = Bitmap.createBitmap(bitmap, safeRect.left, safeRect.top, safeRect.width(), safeRect.height())
                         bitmap.recycle()
                         processBitmap(cropped)
                     } else {
-                        Log.e(TAG, "Invalid rect: $safeRect")
                         bitmap.recycle()
+                        handler.post { Toast.makeText(this@AccessibilitySearchService, "选区无效", Toast.LENGTH_SHORT).show() }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Crop failed", e)
                     bitmap.recycle()
+                    handler.post { Toast.makeText(this@AccessibilitySearchService, "截图处理失败", Toast.LENGTH_SHORT).show() }
                 }
-            } ?: run {
-                Log.e(TAG, "Screenshot returned null")
-                handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败", Toast.LENGTH_SHORT).show() }
             }
+
+            override fun onFailure(errorCode: Int) {
+                Log.e(TAG, "Screenshot failed: $errorCode")
+                handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败，请重试", Toast.LENGTH_SHORT).show() }
+            }
+        })
+    }
+
+    private fun getScreenshotBitmap(result: ScreenshotResult): Bitmap? {
+        return try {
+            val field = result.javaClass.getDeclaredField("bitmap")
+            field.isAccessible = true
+            field.get(result) as? Bitmap
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get screenshot bitmap", e)
+            null
         }
     }
 
