@@ -2,47 +2,31 @@ package com.questionhelper.ocr
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.media.Image
 import android.util.Log
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
-import com.google.mlkit.vision.text.TextRecognizer
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class OcrManager(context: Context) {
-    private val recognizer: TextRecognizer = TextRecognition.getClient(
-        ChineseTextRecognizerOptions.Builder().build()
-    )
+    private val predictor: OCRPredictor
+    private val tag = "OcrManager"
 
-    suspend fun recognizeFromBitmap(bitmap: Bitmap): String = suspendCancellableCoroutine { continuation ->
-        val image = InputImage.fromBitmap(bitmap, 0)
-        recognizer.process(image)
-            .addOnSuccessListener { visionText ->
-                val text = visionText.text.trim()
-                Log.d("OCR", "Recognized: $text")
-                continuation.resume(text)
-            }
-            .addOnFailureListener { e ->
-                Log.e("OCR", "Recognition failed", e)
-                continuation.resumeWithException(e)
-            }
+    init {
+        val assetPath = "paddleocr"
+        predictor = OCRPredictor(context, assetPath)
+        Log.d(tag, "OCR initialized with PaddleOCR")
     }
 
-    suspend fun recognizeFromImage(image: Image, rotationDegrees: Int): String = suspendCancellableCoroutine { continuation ->
-        val inputImage = InputImage.fromMediaImage(image, rotationDegrees)
-        recognizer.process(inputImage)
-            .addOnSuccessListener { visionText ->
-                continuation.resume(visionText.text.trim())
-            }
-            .addOnFailureListener { e ->
-                continuation.resumeWithException(e)
-            }
+    suspend fun recognizeFromBitmap(bitmap: Bitmap): String = withContext(Dispatchers.Default) {
+        try {
+            val results = predictor.runOcr(bitmap)
+            results.joinToString("\n") { it.text }
+        } catch (e: Exception) {
+            Log.e(tag, "OCR failed", e)
+            ""
+        }
     }
 
     fun close() {
-        recognizer.close()
+        predictor.release()
     }
 }

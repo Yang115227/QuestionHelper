@@ -232,7 +232,7 @@ private fun parseFile(inputStream: InputStream?, fileName: String?, defaultCateg
     inputStream ?: return emptyList()
     return when {
         fileName?.endsWith(".xlsx") == true || fileName?.endsWith(".xls") == true -> {
-            ExcelParser.parse(inputStream, defaultCategory)
+            ExcelParser.parse(inputStream)
         }
         else -> TxtParser.parse(inputStream, defaultCategory)
     }

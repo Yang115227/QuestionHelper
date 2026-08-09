@@ -1,40 +1,65 @@
 package com.questionhelper.parser
 
+import android.util.Log
 import com.questionhelper.data.Question
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.InputStream
 
 object ExcelParser {
-    fun parse(inputStream: InputStream, defaultCategory: String = "默认"): List<Question> {
+    private const val TAG = "ExcelParser"
+
+    fun parse(inputStream: InputStream): List<Question> {
         val questions = mutableListOf<Question>()
         val workbook = WorkbookFactory.create(inputStream)
-        val sheet = workbook.getSheetAt(0)
 
-        // 表头：内容、选项、答案、解析、科目（科目可选）
-        for (i in 1..sheet.lastRowNum) {
-            val row = sheet.getRow(i) ?: continue
-            try {
-                val content = row.getCell(0)?.toString()?.trim() ?: continue
-                val options = row.getCell(1)?.toString()?.trim() ?: ""
-                val answer = row.getCell(2)?.toString()?.trim() ?: ""
-                val analysis = row.getCell(3)?.toString()?.trim() ?: ""
-                val subject = row.getCell(4)?.toString()?.trim()?.takeIf { it.isNotBlank() } ?: defaultCategory
+        // 遍历所有 Sheet
+        for (sheetIndex in 0 until workbook.numberOfSheets) {
+            val sheet = workbook.getSheetAt(sheetIndex)
+            val sheetName = sheet.sheetName ?: "默认"
+            
+            if (sheet.lastRowNum < 1) continue // 只有标题行或空表
 
-                if (content.isNotEmpty()) {
+            // 第一行是标题，从第二行（索引1）开始读
+            for (rowIndex in 1..sheet.lastRowNum) {
+                val row = sheet.getRow(rowIndex) ?: continue
+                
+                try {
+                    // 第一列：题目
+                    val content = row.getCell(0)?.toString()?.trim()
+                    if (content.isNullOrEmpty()) continue
+
+                    // 第二列：正确答案
+                    val answer = row.getCell(1)?.toString()?.trim() ?: ""
+
+                    // 第三列及以后：选项
+                    val optionsList = mutableListOf<String>()
+                    for (colIndex in 2 until row.lastCellNum.coerceAtLeast(0)) {
+                        val optionCell = row.getCell(colIndex)
+                        val optionText = optionCell?.toString()?.trim()
+                        if (!optionText.isNullOrEmpty()) {
+                            // 列索引 2 对应选项A，3对应B，以此类推
+                            val optionLabel = ('A' + (colIndex - 2)).toString()
+                            optionsList.add("$optionLabel. $optionText")
+                        }
+                    }
+                    val options = if (optionsList.isNotEmpty()) optionsList.joinToString("|") else ""
+
                     questions.add(Question(
                         content = content,
                         options = options,
                         answer = answer,
-                        analysis = analysis,
-                        subject = subject
+                        analysis = "",
+                        subject = sheetName
                     ))
+                } catch (e: Exception) {
+                    Log.e(TAG, "Parse row $rowIndex in sheet '$sheetName' failed", e)
+                    continue
                 }
-            } catch (e: Exception) {
-                continue
             }
         }
 
         workbook.close()
+        Log.d(TAG, "Parsed ${questions.size} questions from ${workbook.numberOfSheets} sheets")
         return questions
     }
 }

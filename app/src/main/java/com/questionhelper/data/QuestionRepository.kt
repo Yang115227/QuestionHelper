@@ -33,6 +33,10 @@ class QuestionRepository(private val dao: QuestionDao) {
         dao.deleteQuestion(question)
     }
 
+    suspend fun deleteQuestionById(id: Long) = withContext(Dispatchers.IO) {
+        dao.deleteQuestionById(id)
+    }
+
     suspend fun getQuestionCount(): Int = withContext(Dispatchers.IO) {
         dao.getQuestionCount()
     }
@@ -57,5 +61,18 @@ class QuestionRepository(private val dao: QuestionDao) {
     // 新增：随机练习
     suspend fun getRandomQuestions(subject: String = "全部"): List<Question> = withContext(Dispatchers.IO) {
         if (subject == "全部") dao.getAllQuestionsRandom() else dao.getQuestionsRandom(subject)
+    }
+
+    // ===== 新增：按分类管理 =====
+    suspend fun deleteQuestionsBySubject(subject: String) = withContext(Dispatchers.IO) {
+        dao.deleteQuestionsBySubject(subject)
+    }
+
+    suspend fun getQuestionCountBySubject(subject: String): Int = withContext(Dispatchers.IO) {
+        dao.getQuestionCountBySubject(subject)
+    }
+
+    suspend fun getLatestQuestionBySubject(subject: String): Question? = withContext(Dispatchers.IO) {
+        dao.getLatestQuestionBySubject(subject)
     }
 }

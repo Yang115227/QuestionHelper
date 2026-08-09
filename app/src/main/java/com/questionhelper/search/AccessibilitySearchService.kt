@@ -41,8 +41,7 @@ class AccessibilitySearchService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         ocrManager = OcrManager(this)
-        
-        // 注册广播接收器
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val filter = IntentFilter("com.questionhelper.ACCESSIBILITY_CAPTURE")
             try {
@@ -56,14 +55,23 @@ class AccessibilitySearchService : AccessibilityService() {
                 Log.e(TAG, "Register receiver failed", e)
             }
         }
-        
+
         Toast.makeText(this, "无障碍搜题服务已启动", Toast.LENGTH_SHORT).show()
         Log.d(TAG, "Accessibility service connected")
-        
-        // 自动启动悬浮窗服务
+
         if (FloatWindowService.checkPermission(this)) {
-            startService(Intent(this, FloatWindowService::class.java))
-            Toast.makeText(this, "悬浮球已显示", Toast.LENGTH_SHORT).show()
+            try {
+                val intent = Intent(this, FloatWindowService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+                Toast.makeText(this, "悬浮球已显示", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Log.e(TAG, "Start float window failed", e)
+                Toast.makeText(this, "悬浮球启动失败，请手动返回App开启", Toast.LENGTH_LONG).show()
+            }
         } else {
             Toast.makeText(this, "请返回App开启悬浮窗权限", Toast.LENGTH_LONG).show()
         }
@@ -71,32 +79,51 @@ class AccessibilitySearchService : AccessibilityService() {
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun captureWithAccessibility(rect: Rect) {
-        takeScreenshot(Display.DEFAULT_DISPLAY, handler) { screenshot ->
-            screenshot?.let { bitmap ->
-                try {
-                    val safeRect = Rect(
-                        rect.left.coerceIn(0, bitmap.width),
-                        rect.top.coerceIn(0, bitmap.height),
-                        rect.right.coerceIn(0, bitmap.width),
-                        rect.bottom.coerceIn(0, bitmap.height)
-                    )
-                    
-                    if (safeRect.width() > 0 && safeRect.height() > 0) {
-                        val cropped = Bitmap.createBitmap(bitmap, safeRect.left, safeRect.top, safeRect.width(), safeRect.height())
-                        bitmap.recycle()
-                        processBitmap(cropped)
-                    } else {
-                        Log.e(TAG, "Invalid rect: $safeRect")
-                        bitmap.recycle()
+        try {
+            val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+            val callbackClass = Class.forName("android.accessibilityservice.AccessibilityService\$TakeScreenshotCallback")
+            val paramTypes = arrayOf<Class<*>>(Int::class.javaPrimitiveType!!, java.util.concurrent.Executor::class.java, callbackClass)
+            val method = AccessibilityService::class.java.getDeclaredMethod("takeScreenshot", *paramTypes)
+            val proxy = java.lang.reflect.Proxy.newProxyInstance(callbackClass.classLoader, arrayOf(callbackClass)) { _, proxyMethod, args ->
+                if (proxyMethod.name == "onSuccess") {
+                    val result = args?.getOrNull(0)
+                    val bitmap = result?.let {
+                        try {
+                            val m = it.javaClass.getMethod("getBitmap")
+                            m.invoke(it) as? Bitmap
+                        } catch (_: Exception) { null }
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Crop failed", e)
-                    bitmap.recycle()
+                    if (bitmap != null) {
+                        try {
+                            val safeRect = Rect(
+                                rect.left.coerceIn(0, bitmap.width),
+                                rect.top.coerceIn(0, bitmap.height),
+                                rect.right.coerceIn(0, bitmap.width),
+                                rect.bottom.coerceIn(0, bitmap.height)
+                            )
+                            if (safeRect.width() > 0 && safeRect.height() > 0) {
+                                val cropped = Bitmap.createBitmap(bitmap, safeRect.left, safeRect.top, safeRect.width(), safeRect.height())
+                                bitmap.recycle()
+                                processBitmap(cropped)
+                            } else {
+                                Log.e(TAG, "Invalid rect: $safeRect")
+                                bitmap.recycle()
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Crop failed", e)
+                            bitmap.recycle()
+                        }
+                    } else {
+                        Log.e(TAG, "Screenshot returned null")
+                        handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败", Toast.LENGTH_SHORT).show() }
+                    }
                 }
-            } ?: run {
-                Log.e(TAG, "Screenshot returned null")
-                handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败", Toast.LENGTH_SHORT).show() }
+                null
             }
+            method.invoke(this, Display.DEFAULT_DISPLAY, executor, proxy)
+        } catch (e: Exception) {
+            Log.e(TAG, "takeScreenshot failed", e)
+            handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败", Toast.LENGTH_SHORT).show() }
         }
     }
 
@@ -105,7 +132,7 @@ class AccessibilitySearchService : AccessibilityService() {
             try {
                 val text = ocrManager.recognizeFromBitmap(bitmap)
                 bitmap.recycle()
-                
+
                 if (text.isNotEmpty()) {
                     val repo = QuestionRepository(QuestionApp.database.questionDao())
                     val question = repo.searchQuestion(text.take(50))

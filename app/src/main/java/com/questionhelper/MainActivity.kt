@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -23,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.questionhelper.bank.QuestionBankActivity
 import com.questionhelper.data.QuestionRepository
 import com.questionhelper.search.CameraSearchActivity
@@ -39,6 +42,8 @@ data class FeatureItem(
 )
 
 class MainActivity : ComponentActivity() {
+    private val handler = Handler(Looper.getMainLooper())
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val showCaptureChoice = intent.getBooleanExtra("show_capture_choice", false)
@@ -60,12 +65,12 @@ class MainActivity : ComponentActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 1001 && resultCode == RESULT_OK && data != null) {
-            // 通过 Intent 传递 MediaProjection 数据，不用静态变量
             val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
                 putExtra("result_code", resultCode)
                 putExtra("result_data", data)
             }
-            startService(serviceIntent)
+            // ✅ 修复：Android 8.0+ 启动前台服务必须用 startForegroundService
+            ContextCompat.startForegroundService(this, serviceIntent)
             Toast.makeText(this, "录屏服务已启动", Toast.LENGTH_SHORT).show()
             FloatWindowService.start(this)
         } else if (requestCode == 1001) {
@@ -142,10 +147,10 @@ fun MainScreen(
                         context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
                         return@FeatureItem
                     }
-                    
-                    val hasScreenCapture = ScreenCaptureService.isRunning
+
+                    val hasScreenCapture = ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized
                     val hasAccessibility = isAccessibilityEnabled(context)
-                    
+
                     if (!hasScreenCapture && !hasAccessibility) {
                         showCaptureDialog = true
                     } else {
@@ -160,12 +165,6 @@ fun MainScreen(
                     val intent = Intent(context, QuestionBankActivity::class.java)
                     intent.putExtra("mode", "wrong")
                     context.startActivity(intent)
-                },
-                FeatureItem("无障碍设置", Icons.Default.Accessibility, "开启无障碍服务") {
-                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                },
-                FeatureItem("录屏权限", Icons.Default.ScreenShare, "开启录屏截图权限") {
-                    onRequestMediaProjection()
                 }
             )
 
@@ -189,7 +188,7 @@ fun MainScreen(
                 Column {
                     Text("悬浮搜题需要截图能力，请选择一种方式：")
                     Spacer(modifier = Modifier.height(12.dp))
-                    
+
                     Card(
                         onClick = {
                             showCaptureDialog = false
@@ -212,9 +211,9 @@ fun MainScreen(
                             }
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
                     Card(
                         onClick = {
                             showCaptureDialog = false
