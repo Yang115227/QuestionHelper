@@ -1,5 +1,8 @@
 package com.questionhelper.search
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -15,6 +18,7 @@ import android.util.Log
 import android.view.*
 import android.widget.ImageButton
 import android.widget.Toast
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.questionhelper.MainActivity
 
@@ -30,13 +34,15 @@ class FloatWindowService : Service() {
         private const val TAG = "FloatWindow"
         private const val PREFS_NAME = "crop_prefs"
         private const val KEY_CROP_RECT = "crop_rect"
-        
+        private const val CHANNEL_ID = "float_window"
+        private const val NOTIFICATION_ID = 1002
+
         fun checkPermission(context: Context): Boolean {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 Settings.canDrawOverlays(context)
             } else true
         }
-        
+
         fun start(context: Context) {
             if (!checkPermission(context)) {
                 Toast.makeText(context, "请先开启悬浮窗权限", Toast.LENGTH_LONG).show()
@@ -46,7 +52,13 @@ class FloatWindowService : Service() {
                 context.startActivity(intent)
                 return
             }
-            context.startService(Intent(context, FloatWindowService::class.java))
+            // Android 8.0+ 必须用 startForegroundService
+            val intent = Intent(context, FloatWindowService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(context, intent)
+            } else {
+                context.startService(intent)
+            }
         }
     }
 
@@ -56,7 +68,32 @@ class FloatWindowService : Service() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        // 前台服务通知
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            createNotificationChannel()
+        }
+        startForeground(NOTIFICATION_ID, createNotification())
+
         showFloatBall()
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID, "悬浮搜题服务", NotificationManager.IMPORTANCE_LOW
+            ).apply { description = "保持悬浮球显示" }
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+    }
+
+    private fun createNotification(): Notification {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("搜题助手")
+            .setContentText("悬浮搜题运行中")
+            .setSmallIcon(android.R.drawable.ic_menu_search)
+            .setOngoing(true)
+            .build()
     }
 
     private fun showFloatBall() {
@@ -102,7 +139,7 @@ class FloatWindowService : Service() {
             return
         }
 
-        val hasScreenCapture = ScreenCaptureService.isRunning
+        val hasScreenCapture = ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized
         val hasAccessibility = isAccessibilityServiceEnabled()
 
         if (!hasScreenCapture && !hasAccessibility) {
@@ -150,20 +187,16 @@ class FloatWindowService : Service() {
 
         // 读取记忆的选区
         val savedRect = loadCropRect()
-        
+
         cropView = CropOverlayView(this).apply {
             if (savedRect != null) {
                 setInitialRect(savedRect)
             }
             onCropConfirmed = { rect ->
-                // 关键修复：先保存选区，再移除框选层，最后截图
                 saveCropRect(rect)
-                // 先移除框选层（防止截到框选层本身）
                 removeCropViewOnly()
-                // 延迟后截图（确保框选层已完全移除）
                 handler.postDelayed({
                     captureAndSearch(rect)
-                    // 截图后恢复悬浮球
                     floatBall?.visibility = View.VISIBLE
                     isShowingCrop = false
                 }, 200)
@@ -182,7 +215,6 @@ class FloatWindowService : Service() {
         }
     }
 
-    // 只移除框选层视图，不恢复悬浮球（因为截图前要完全干净）
     private fun removeCropViewOnly() {
         cropView?.let {
             try {
@@ -202,22 +234,31 @@ class FloatWindowService : Service() {
 
     private fun captureAndSearch(rect: Rect) {
         Log.d(TAG, "captureAndSearch: $rect")
-        
-        if (ScreenCaptureService.isRunning) {
-            // 确保 Service 活着
-            startService(Intent(this, ScreenCaptureService::class.java))
-            Toast.makeText(this, "正在截图识别...", Toast.LENGTH_SHORT).show()
-            sendBroadcast(Intent("com.questionhelper.CAPTURE_SCREEN").apply {
-                putExtra("rect", rect)
-            })
-        } else if (isAccessibilityServiceEnabled()) {
-            Toast.makeText(this, "正在截图识别...", Toast.LENGTH_SHORT).show()
-            sendBroadcast(Intent("com.questionhelper.ACCESSIBILITY_CAPTURE").apply {
-                putExtra("rect", rect)
-            })
-        } else {
-            Toast.makeText(this, "截图服务未运行", Toast.LENGTH_SHORT).show()
-            floatBall?.visibility = View.VISIBLE
+
+        when {
+            ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized -> {
+                // 用 Intent 直接启动 Service 传递数据，替代不可靠的广播
+                val intent = Intent(this, ScreenCaptureService::class.java).apply {
+                    action = "CAPTURE"
+                    putExtra("rect", rect)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    ContextCompat.startForegroundService(this, intent)
+                } else {
+                    startService(intent)
+                }
+            }
+            isAccessibilityServiceEnabled() -> {
+                val intent = Intent(this, AccessibilitySearchService::class.java).apply {
+                    action = "CAPTURE"
+                    putExtra("rect", rect)
+                }
+                startService(intent)
+            }
+            else -> {
+                Toast.makeText(this, "截图服务未运行", Toast.LENGTH_SHORT).show()
+                floatBall?.visibility = View.VISIBLE
+            }
         }
     }
 

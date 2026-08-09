@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.core.content.ContextCompat
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -64,7 +65,8 @@ class MainActivity : ComponentActivity() {
                 putExtra("result_code", resultCode)
                 putExtra("result_data", data)
             }
-            startService(serviceIntent)
+            // Android 8.0+ 启动前台服务必须用 startForegroundService
+            ContextCompat.startForegroundService(this, serviceIntent)
             Toast.makeText(this, "录屏服务已启动", Toast.LENGTH_SHORT).show()
             FloatWindowService.start(this)
         } else if (requestCode == 1001) {
