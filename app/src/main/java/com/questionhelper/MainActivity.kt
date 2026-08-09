@@ -3,9 +3,13 @@ package com.questionhelper
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -39,6 +43,8 @@ data class FeatureItem(
 )
 
 class MainActivity : ComponentActivity() {
+    private val handler = Handler(Looper.getMainLooper())
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val showCaptureChoice = intent.getBooleanExtra("show_capture_choice", false)
@@ -64,9 +70,15 @@ class MainActivity : ComponentActivity() {
                 putExtra("result_code", resultCode)
                 putExtra("result_data", data)
             }
-            startService(serviceIntent)
+
+            // 关键修复：Android 8.0+ 启动前台服务必须用 startForegroundService
+            ContextCompat.startForegroundService(this, serviceIntent)
             Toast.makeText(this, "录屏服务已启动", Toast.LENGTH_SHORT).show()
-            FloatWindowService.start(this)
+
+            // 延迟启动悬浮球，确保录屏服务先完成前台化
+            handler.postDelayed({
+                FloatWindowService.start(this)
+            }, 300)
         } else if (requestCode == 1001) {
             Toast.makeText(this, "录屏权限被拒绝", Toast.LENGTH_SHORT).show()
         }

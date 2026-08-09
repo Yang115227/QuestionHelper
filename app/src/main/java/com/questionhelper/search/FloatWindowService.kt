@@ -48,7 +48,12 @@ class FloatWindowService : Service() {
                 context.startActivity(intent)
                 return
             }
-            context.startService(Intent(context, FloatWindowService::class.java))
+            val intent = Intent(context, FloatWindowService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(context, intent)
+            } else {
+                context.startService(intent)
+            }
         }
     }
 
@@ -218,23 +223,26 @@ class FloatWindowService : Service() {
 
         when {
             ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized -> {
-                // 直接启动 Service 传递数据，比广播更可靠
-                Toast.makeText(this, "正在截图识别...", Toast.LENGTH_SHORT).show()
-                startService(Intent(this, ScreenCaptureService::class.java).apply {
+                // 用 Intent 直接启动 Service，替代不可靠的广播
+                val intent = Intent(this, ScreenCaptureService::class.java).apply {
                     action = "CAPTURE"
                     putExtra("rect", rect)
-                })
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    ContextCompat.startForegroundService(this, intent)
+                } else {
+                    startService(intent)
+                }
             }
             isAccessibilityServiceEnabled() -> {
-                Toast.makeText(this, "正在截图识别...", Toast.LENGTH_SHORT).show()
-                startService(Intent(this, AccessibilitySearchService::class.java).apply {
+                val intent = Intent(this, AccessibilitySearchService::class.java).apply {
                     action = "CAPTURE"
                     putExtra("rect", rect)
-                })
+                }
+                startService(intent)
             }
             else -> {
                 Toast.makeText(this, "截图服务未运行，请重新开启", Toast.LENGTH_SHORT).show()
-                floatBall?.visibility = View.VISIBLE
             }
         }
     }

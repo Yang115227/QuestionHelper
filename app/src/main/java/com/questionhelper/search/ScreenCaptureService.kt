@@ -33,16 +33,16 @@ class ScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private lateinit var ocrManager: OcrManager
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var backgroundHandler: Handler? = null
-    private var backgroundThread: HandlerThread? = null
+    private val handler = Handler(Looper.getMainLooper())
     private var metrics: DisplayMetrics? = null
 
     companion object {
         @Volatile
         var isRunning = false
         @Volatile
-        var isInitialized = false  // 改为 public，供 FloatWindowService 检查
+        var isInitialized = false  // 暴露给外部检查
+            private set
+
         private const val TAG = "ScreenCapture"
         private const val CHANNEL_ID = "screen_capture"
         private const val NOTIFICATION_ID = 1001
@@ -58,12 +58,6 @@ class ScreenCaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
-
-        // 关键修复：创建后台线程处理 ImageReader
-        backgroundThread = HandlerThread("ScreenCaptureThread", Process.THREAD_PRIORITY_BACKGROUND)
-        backgroundThread?.start()
-        backgroundHandler = Handler(backgroundThread!!.looper)
-
         ocrManager = OcrManager(this)
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification())
@@ -72,21 +66,29 @@ class ScreenCaptureService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand: isInitialized=$isInitialized")
-
+        // 初始化 MediaProjection
         if (!isInitialized) {
             if (intent == null) {
-                // 系统重启服务但没有录屏数据，直接停止
+                // 系统重启服务但没有数据，直接停止
                 isRunning = false
                 stopSelf()
                 return START_NOT_STICKY
             }
+
             val code = intent.getIntExtra("result_code", 0)
-            val data = intent.getParcelableExtra<Intent>("result_data")
+
+            // API 33+ 兼容性修复
+            val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra("result_data", Intent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra("result_data") as? Intent
+            }
+
             if (code != 0 && data != null) {
                 initMediaProjection(code, data)
             } else {
-                mainHandler.post { Toast.makeText(this, "录屏数据缺失，请重新授权", Toast.LENGTH_SHORT).show() }
+                Log.e(TAG, "Missing result_code or result_data")
                 isRunning = false
                 stopSelf()
                 return START_NOT_STICKY
@@ -95,7 +97,12 @@ class ScreenCaptureService : Service() {
 
         // 处理直接截图请求（替代广播）
         if (intent?.action == "CAPTURE") {
-            val rect = intent.getParcelableExtra<Rect>("rect")
+            val rect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra("rect", Rect::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra("rect") as? Rect
+            }
             rect?.let { captureArea(it) }
         }
 
@@ -126,7 +133,7 @@ class ScreenCaptureService : Service() {
             mediaProjection = manager.getMediaProjection(resultCode, resultData)
             if (mediaProjection == null) {
                 Log.e(TAG, "getMediaProjection returned null")
-                mainHandler.post { Toast.makeText(this, "录屏初始化失败", Toast.LENGTH_SHORT).show() }
+                handler.post { Toast.makeText(this, "录屏初始化失败", Toast.LENGTH_SHORT).show() }
                 return
             }
 
@@ -136,14 +143,14 @@ class ScreenCaptureService : Service() {
                     Log.d(TAG, "MediaProjection stopped")
                     isInitialized = false
                 }
-            }, mainHandler)
+            }, handler)
 
             setupImageReader()
             isInitialized = true
             Log.d(TAG, "MediaProjection initialized")
         } catch (e: Exception) {
             Log.e(TAG, "Init failed", e)
-            mainHandler.post { Toast.makeText(this, "录屏初始化失败：${e.message}", Toast.LENGTH_LONG).show() }
+            handler.post { Toast.makeText(this, "录屏初始化失败：${e.message}", Toast.LENGTH_LONG).show() }
         }
     }
 
@@ -160,26 +167,22 @@ class ScreenCaptureService : Service() {
             "ScreenCapture",
             metrics!!.widthPixels, metrics!!.heightPixels, metrics!!.densityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface, null, backgroundHandler
+            imageReader?.surface, null, null
         )
         Log.d(TAG, "VirtualDisplay created")
     }
 
     private fun captureArea(rect: Rect) {
-        Log.d(TAG, "captureArea called, isInitialized=$isInitialized")
         if (!isInitialized || imageReader == null) {
-            mainHandler.post {
+            handler.post {
                 Toast.makeText(this, "录屏服务未就绪，请重新授权", Toast.LENGTH_SHORT).show()
             }
             return
         }
 
-        mainHandler.post { Toast.makeText(this, "正在截图...", Toast.LENGTH_SHORT).show() }
-
-        // 延迟确保框选层已完全消失
-        mainHandler.postDelayed({
+        handler.postDelayed({
             try {
-                // 添加重试机制，解决图像未就绪问题
+                // 添加重试机制
                 var image: Image? = null
                 var retryCount = 0
                 while (image == null && retryCount < 5) {
@@ -191,7 +194,7 @@ class ScreenCaptureService : Service() {
                 }
 
                 if (image == null) {
-                    mainHandler.post {
+                    handler.post {
                         Toast.makeText(this, "截图失败：无法获取屏幕图像", Toast.LENGTH_SHORT).show()
                     }
                     return@postDelayed
@@ -213,26 +216,25 @@ class ScreenCaptureService : Service() {
                             bmp, safeRect.left, safeRect.top,
                             safeRect.width(), safeRect.height()
                         )
-                        mainHandler.post { Toast.makeText(this, "正在识别...", Toast.LENGTH_SHORT).show() }
                         processBitmap(cropped)
                     } else {
-                        mainHandler.post {
+                        handler.post {
                             Toast.makeText(this, "选区无效，请重新框选", Toast.LENGTH_SHORT).show()
                         }
                     }
-                    bmp.recycle()  // 确保释放原图
+                    bmp.recycle()
                 } ?: run {
-                    mainHandler.post {
+                    handler.post {
                         Toast.makeText(this, "图像转换失败", Toast.LENGTH_SHORT).show()
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Capture failed", e)
-                mainHandler.post {
+                handler.post {
                     Toast.makeText(this, "截图异常：${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
-        }, 300)  // 延迟可以缩短到 300ms
+        }, 300)
     }
 
     private fun imageToBitmap(image: Image): Bitmap? {
@@ -261,16 +263,16 @@ class ScreenCaptureService : Service() {
                 bitmap.recycle()
 
                 if (text.isEmpty()) {
-                    mainHandler.post { Toast.makeText(this@ScreenCaptureService, "未识别到文字，请重新框选", Toast.LENGTH_LONG).show() }
+                    handler.post { Toast.makeText(this@ScreenCaptureService, "未识别到文字，请重新框选", Toast.LENGTH_LONG).show() }
                     return@launch
                 }
 
-                mainHandler.post { Toast.makeText(this@ScreenCaptureService, "识别成功，正在搜索...", Toast.LENGTH_SHORT).show() }
+                handler.post { Toast.makeText(this@ScreenCaptureService, "识别成功，正在搜索...", Toast.LENGTH_SHORT).show() }
 
                 val repo = QuestionRepository(QuestionApp.database.questionDao())
                 val question = repo.searchQuestion(text.take(50))
 
-                mainHandler.post {
+                handler.post {
                     val intent = Intent(this@ScreenCaptureService, SearchResultActivity::class.java).apply {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
                         putExtra("question", question?.content ?: text)
@@ -281,7 +283,7 @@ class ScreenCaptureService : Service() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "OCR failed", e)
-                mainHandler.post { Toast.makeText(this@ScreenCaptureService, "识别失败：${e.message}", Toast.LENGTH_LONG).show() }
+                handler.post { Toast.makeText(this@ScreenCaptureService, "识别失败：${e.message}", Toast.LENGTH_LONG).show() }
             }
         }
     }
@@ -289,12 +291,11 @@ class ScreenCaptureService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
-        isInitialized = false  // 重置初始化状态
+        isInitialized = false
         virtualDisplay?.release()
         mediaProjection?.stop()
         imageReader?.close()
         ocrManager.close()
-        backgroundThread?.quitSafely()
         Log.d(TAG, "Service destroyed")
     }
 }

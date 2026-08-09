@@ -63,8 +63,18 @@ class AccessibilitySearchService : AccessibilityService() {
         
         // 自动启动悬浮窗服务
         if (FloatWindowService.checkPermission(this)) {
-            startService(Intent(this, FloatWindowService::class.java))
-            Toast.makeText(this, "悬浮球已显示", Toast.LENGTH_SHORT).show()
+            try {
+                val intent = Intent(this, FloatWindowService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+                Toast.makeText(this, "悬浮球已显示", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Log.e(TAG, "Start float window failed", e)
+                Toast.makeText(this, "悬浮球启动失败，请手动返回App开启", Toast.LENGTH_LONG).show()
+            }
         } else {
             Toast.makeText(this, "请返回App开启悬浮窗权限", Toast.LENGTH_LONG).show()
         }
@@ -152,7 +162,12 @@ class AccessibilitySearchService : AccessibilityService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "CAPTURE") {
-            val rect = intent.getParcelableExtra<Rect>("rect")
+            val rect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra("rect", Rect::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra("rect") as? Rect
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && rect != null) {
                 captureWithAccessibility(rect)
             }
