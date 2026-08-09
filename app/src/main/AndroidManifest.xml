@@ -40,6 +40,7 @@
         <activity android:name=".search.SearchResultActivity" android:theme="@style/Theme.QuestionHelper" android:launchMode="singleTask" />
         <activity android:name=".bank.QuestionBankActivity" android:theme="@style/Theme.QuestionHelper" />
         <activity android:name=".bank.PracticeActivity" android:theme="@style/Theme.QuestionHelper" />
+        <activity android:name=".bank.PracticeSelectActivity" android:theme="@style/Theme.QuestionHelper" />
         <activity android:name=".bank.ImportActivity" android:theme="@style/Theme.QuestionHelper" />
 
         <service

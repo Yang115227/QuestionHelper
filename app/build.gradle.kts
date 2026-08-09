@@ -55,6 +55,11 @@ android {
     buildFeatures {
         compose = true
     }
+
+    androidResources {
+        noCompress += listOf("tflite", "lite", "nb", "txt")
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -95,6 +100,9 @@ dependencies {
     // POI (for Excel/Word parsing)
     implementation(libs.poi)
     implementation(libs.poi.ooxml)
+
+    // Paddle Lite OCR
+    implementation(files("libs/paddle-lite-android.aar"))
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
