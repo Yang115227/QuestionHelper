@@ -80,10 +80,13 @@ class AccessibilitySearchService : AccessibilityService() {
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun captureWithAccessibility(rect: Rect) {
-        val executor = Executors.newSingleThreadExecutor()
-        takeScreenshot(Display.DEFAULT_DISPLAY, executor,
-            object : AccessibilityService.TakeScreenshotCallback {
-                override fun onSuccess(result: Any?) {
+        try {
+            val executor = Executors.newSingleThreadExecutor()
+            val method = AccessibilityService::class.java.getMethod("takeScreenshot", Int::class.javaPrimitiveType, Executor::class.java, Class.forName("android.accessibilityservice.AccessibilityService\$TakeScreenshotCallback"))
+            val callbackClass = Class.forName("android.accessibilityservice.AccessibilityService\$TakeScreenshotCallback")
+            val proxy = java.lang.reflect.Proxy.newProxyInstance(callbackClass.classLoader, arrayOf(callbackClass)) { _, proxyMethod, args ->
+                if (proxyMethod.name == "onSuccess") {
+                    val result = args?.getOrNull(0)
                     val bitmap = result?.let {
                         try {
                             val m = it.javaClass.getMethod("getBitmap")
@@ -115,7 +118,13 @@ class AccessibilitySearchService : AccessibilityService() {
                         handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败", Toast.LENGTH_SHORT).show() }
                     }
                 }
-            })
+                null
+            }
+            method.invoke(this, Display.DEFAULT_DISPLAY, executor, proxy)
+        } catch (e: Exception) {
+            Log.e(TAG, "takeScreenshot failed", e)
+            handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败", Toast.LENGTH_SHORT).show() }
+        }
     }
 
     private fun processBitmap(bitmap: Bitmap) {
