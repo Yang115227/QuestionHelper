@@ -101,6 +101,9 @@ dependencies {
     implementation(libs.poi)
     implementation(libs.poi.ooxml)
 
+    // Paddle Lite OCR
+    implementation(files("libs/paddle-lite-android.aar"))
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
