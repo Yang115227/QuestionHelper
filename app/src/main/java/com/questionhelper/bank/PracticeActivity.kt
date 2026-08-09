@@ -126,7 +126,11 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                             )
                             judgeOptions.forEach { (letter, text) ->
                                 val isSelected = selectedOptions.contains(letter)
-                                val isAnswer = showAnswer && currentQuestion.answer.trim() == letter
+                                // 支持答案为 "A"/"B" 或 "正确"/"错误" 两种格式
+                                val isAnswer = showAnswer && when (currentQuestion.answer.trim()) {
+                                    letter, text -> true
+                                    else -> false
+                                }
 
                                 Card(
                                     onClick = { if (!showAnswer) selectedOptions = setOf(letter) },
@@ -268,10 +272,10 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                                             isMultiSelect -> rawAnswer.filter { it in 'A'..'Z' }.toList().sorted().joinToString("")
                                             else -> rawAnswer.filter { it in 'A'..'Z' }
                                         }
-                                        val userAns = if (isJudge) {
-                                            selectedOptions.firstOrNull() ?: ""
-                                        } else {
-                                            selectedOptions.sorted().joinToString("")
+                                        val userAns = when {
+                                            isJudge -> selectedOptions.firstOrNull() ?: ""
+                                            isMultiSelect -> selectedOptions.sorted().joinToString("")
+                                            else -> selectedOptions.firstOrNull() ?: ""
                                         }
                                         isCorrect = userAns == correctAns
                                         if (isCorrect == false) {
