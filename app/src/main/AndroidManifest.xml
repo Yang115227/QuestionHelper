@@ -39,16 +39,12 @@
         <activity android:name=".bank.QuestionBankActivity" android:theme="@style/Theme.QuestionHelper" />
         <activity android:name=".bank.PracticeActivity" android:theme="@style/Theme.QuestionHelper" />
         <activity android:name=".bank.ImportActivity" android:theme="@style/Theme.QuestionHelper" />
-        <!-- 新增：练习选择页 -->
-        <activity android:name=".bank.PracticeSelectActivity" android:theme="@style/Theme.QuestionHelper" />
 
-        <!-- 录屏搜题服务 -->
         <service
             android:name=".search.ScreenCaptureService"
             android:foregroundServiceType="mediaProjection"
             android:exported="false" />
 
-        <!-- 无障碍搜题服务 -->
         <service
             android:name=".search.AccessibilitySearchService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -61,7 +57,7 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- 悬浮窗服务 -->
+        <!-- ✅ 关键修改：加上 foregroundServiceType -->
         <service
             android:name=".search.FloatWindowService"
             android:foregroundServiceType="specialUse"

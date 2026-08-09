@@ -15,7 +15,6 @@ import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 import androidx.annotation.RequiresApi
-import androidx.core.content.ContextCompat
 import com.questionhelper.QuestionApp
 import com.questionhelper.data.QuestionRepository
 import com.questionhelper.ocr.OcrManager
@@ -32,7 +31,7 @@ class AccessibilitySearchService : AccessibilityService() {
     private val captureReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == "com.questionhelper.ACCESSIBILITY_CAPTURE") {
-                val rect = intent.getParcelableExtra<Rect>("rect")
+                val rect = intent.getParcelableExtra("rect")
                 Log.d(TAG, "Capture request: $rect")
                 rect?.let { captureWithAccessibility(it) }
             }
@@ -42,8 +41,7 @@ class AccessibilitySearchService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         ocrManager = OcrManager(this)
-        
-        // 注册广播接收器
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val filter = IntentFilter("com.questionhelper.ACCESSIBILITY_CAPTURE")
             try {
@@ -57,11 +55,11 @@ class AccessibilitySearchService : AccessibilityService() {
                 Log.e(TAG, "Register receiver failed", e)
             }
         }
-        
+
         Toast.makeText(this, "无障碍搜题服务已启动", Toast.LENGTH_SHORT).show()
         Log.d(TAG, "Accessibility service connected")
-        
-        // 自动启动悬浮窗服务
+
+        // ✅ 关键修复：安全启动悬浮窗，防止后台启动崩溃
         if (FloatWindowService.checkPermission(this)) {
             try {
                 val intent = Intent(this, FloatWindowService::class.java)
@@ -82,52 +80,32 @@ class AccessibilitySearchService : AccessibilityService() {
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun captureWithAccessibility(rect: Rect) {
-        handler.post { Toast.makeText(this, "正在截图...", Toast.LENGTH_SHORT).show() }
-        
-        takeScreenshot(Display.DEFAULT_DISPLAY, ContextCompat.getMainExecutor(this), object : TakeScreenshotCallback {
-            override fun onSuccess(screenshot: ScreenshotResult) {
-                val bmp = getScreenshotBitmap(screenshot)
-                if (bmp == null) {
-                    handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败，请重试", Toast.LENGTH_SHORT).show() }
-                    return
-                }
+        takeScreenshot(Display.DEFAULT_DISPLAY, handler) { screenshot ->
+            screenshot?.let { bitmap ->
                 try {
                     val safeRect = Rect(
-                        rect.left.coerceIn(0, bmp.width),
-                        rect.top.coerceIn(0, bmp.height),
-                        rect.right.coerceIn(0, bmp.width),
-                        rect.bottom.coerceIn(0, bmp.height)
+                        rect.left.coerceIn(0, bitmap.width),
+                        rect.top.coerceIn(0, bitmap.height),
+                        rect.right.coerceIn(0, bitmap.width),
+                        rect.bottom.coerceIn(0, bitmap.height)
                     )
+
                     if (safeRect.width() > 0 && safeRect.height() > 0) {
-                        val cropped = Bitmap.createBitmap(bmp, safeRect.left, safeRect.top, safeRect.width(), safeRect.height())
-                        bmp.recycle()
-                        handler.post { Toast.makeText(this@AccessibilitySearchService, "正在识别...", Toast.LENGTH_SHORT).show() }
+                        val cropped = Bitmap.createBitmap(bitmap, safeRect.left, safeRect.top, safeRect.width(), safeRect.height())
+                        bitmap.recycle()
                         processBitmap(cropped)
                     } else {
-                        bmp.recycle()
-                        handler.post { Toast.makeText(this@AccessibilitySearchService, "选区无效", Toast.LENGTH_SHORT).show() }
+                        Log.e(TAG, "Invalid rect: $safeRect")
+                        bitmap.recycle()
                     }
                 } catch (e: Exception) {
-                    bmp.recycle()
-                    handler.post { Toast.makeText(this@AccessibilitySearchService, "截图处理失败", Toast.LENGTH_SHORT).show() }
+                    Log.e(TAG, "Crop failed", e)
+                    bitmap.recycle()
                 }
+            } ?: run {
+                Log.e(TAG, "Screenshot returned null")
+                handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败", Toast.LENGTH_SHORT).show() }
             }
-
-            override fun onFailure(errorCode: Int) {
-                Log.e(TAG, "Screenshot failed: $errorCode")
-                handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败，请重试", Toast.LENGTH_SHORT).show() }
-            }
-        })
-    }
-
-    private fun getScreenshotBitmap(result: ScreenshotResult): Bitmap? {
-        return try {
-            val field: java.lang.reflect.Field = result.javaClass.getDeclaredField("bitmap")
-            field.isAccessible = true
-            field.get(result) as? Bitmap
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get screenshot bitmap", e)
-            null
         }
     }
 
@@ -136,43 +114,26 @@ class AccessibilitySearchService : AccessibilityService() {
             try {
                 val text = ocrManager.recognizeFromBitmap(bitmap)
                 bitmap.recycle()
-                
-                if (text.isEmpty()) {
-                    handler.post { Toast.makeText(this@AccessibilitySearchService, "未识别到文字", Toast.LENGTH_SHORT).show() }
-                    return@launch
-                }
 
-                val repo = QuestionRepository(QuestionApp.database.questionDao())
-                val question = repo.searchQuestion(text.take(50))
-                
-                handler.post {
-                    startActivity(Intent(this@AccessibilitySearchService, SearchResultActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        putExtra("question", question?.content ?: text)
-                        putExtra("answer", question?.answer ?: "未在题库中找到匹配题目")
-                        putExtra("analysis", question?.analysis ?: "")
-                    })
+                if (text.isNotEmpty()) {
+                    val repo = QuestionRepository(QuestionApp.database.questionDao())
+                    val question = repo.searchQuestion(text.take(50))
+                    handler.post {
+                        startActivity(Intent(this@AccessibilitySearchService, SearchResultActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            putExtra("question", question?.content ?: text)
+                            putExtra("answer", question?.answer ?: "未在题库中找到匹配题目")
+                            putExtra("analysis", question?.analysis ?: "")
+                        })
+                    }
+                } else {
+                    handler.post { Toast.makeText(this@AccessibilitySearchService, "未识别到文字", Toast.LENGTH_SHORT).show() }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "OCR failed", e)
                 handler.post { Toast.makeText(this@AccessibilitySearchService, "识别失败", Toast.LENGTH_SHORT).show() }
             }
         }
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == "CAPTURE") {
-            val rect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                intent.getParcelableExtra("rect", Rect::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                intent.getParcelableExtra("rect") as? Rect
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && rect != null) {
-                captureWithAccessibility(rect)
-            }
-        }
-        return super.onStartCommand(intent, flags, startId)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
