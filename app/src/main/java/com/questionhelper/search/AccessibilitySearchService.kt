@@ -10,6 +10,7 @@ import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import java.util.concurrent.Executors
 import android.util.Log
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
@@ -79,8 +80,9 @@ class AccessibilitySearchService : AccessibilityService() {
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun captureWithAccessibility(rect: Rect) {
-        takeScreenshot(Display.DEFAULT_DISPLAY, handler) { screenshot ->
-            screenshot?.let { bitmap ->
+        takeScreenshot(Display.DEFAULT_DISPLAY, Executors.newSingleThreadExecutor()) { result ->
+            val bitmap = result?.bitmap
+            if (bitmap != null) {
                 try {
                     val safeRect = Rect(
                         rect.left.coerceIn(0, bitmap.width),
@@ -101,7 +103,7 @@ class AccessibilitySearchService : AccessibilityService() {
                     Log.e(TAG, "Crop failed", e)
                     bitmap.recycle()
                 }
-            } ?: run {
+            } else {
                 Log.e(TAG, "Screenshot returned null")
                 handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败", Toast.LENGTH_SHORT).show() }
             }
