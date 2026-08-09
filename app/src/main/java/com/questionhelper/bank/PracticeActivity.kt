@@ -48,20 +48,16 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
     var currentIndex by remember { mutableIntStateOf(0) }
     var isLoading by remember { mutableStateOf(true) }
     var showAnswer by remember { mutableStateOf(false) }
-    var selectedOption by remember { mutableStateOf<String?>(null) }
+    var selectedOptions by remember { mutableStateOf<Set<String>>(emptySet()) }
     var isCorrect by remember { mutableStateOf<Boolean?>(null) }
 
-    // 加载题目
     LaunchedEffect(mode, subject) {
         isLoading = true
         questions = try {
             when (mode) {
                 "order" -> repo.getOrderedQuestions(subject)
                 "random" -> repo.getRandomQuestions(subject)
-                "single" -> {
-                    val q = repo.getQuestionById(initialQuestionId)
-                    listOfNotNull(q)
-                }
+                "single" -> listOfNotNull(repo.getQuestionById(initialQuestionId))
                 else -> repo.getOrderedQuestions(subject)
             }
         } catch (e: Exception) {
@@ -71,25 +67,20 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
         isLoading = false
         currentIndex = 0
         showAnswer = false
-        selectedOption = null
+        selectedOptions = emptySet()
         isCorrect = null
     }
 
     val currentQuestion = questions.getOrNull(currentIndex)
+    val isMultiSelect = currentQuestion?.answer?.length?.let { it > 1 } ?: false
+    val isJudge = currentQuestion?.answer == "正确" || currentQuestion?.answer == "错误"
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
-                    Text(
-                        "${subject} (${currentIndex + 1}/${questions.size})",
-                        fontSize = 17.sp
-                    )
-                },
+                title = { Text("${subject} (${currentIndex + 1}/${questions.size})", fontSize = 17.sp) },
                 navigationIcon = {
-                    IconButton(onClick = { 
-                        (context as? ComponentActivity)?.finish() 
-                    }) {
+                    IconButton(onClick = { (context as? ComponentActivity)?.finish() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 },
@@ -97,34 +88,17 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
             )
         }
     ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp)
-        ) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             when {
-                isLoading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
-                questions.isEmpty() -> {
-                    Column(
-                        modifier = Modifier.align(Alignment.Center),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("暂无题目", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "该分类下没有题目",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                questions.isEmpty() -> Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("暂无题目", style = MaterialTheme.typography.titleMedium)
                 }
                 currentQuestion != null -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                    ) {
+                    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                         // 题目
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -132,32 +106,21 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                             shape = MaterialTheme.shapes.medium
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
-                                Text(
-                                    "${currentIndex + 1}. ${currentQuestion.content}",
-                                    fontSize = 16.sp,
-                                    lineHeight = 24.sp
-                                )
+                                Text("${currentIndex + 1}. ${currentQuestion.content}", fontSize = 16.sp, lineHeight = 24.sp)
                             }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // 选项
-                        if (currentQuestion.options.isNotEmpty()) {
-                            val options = currentQuestion.options.split("|")
-                            options.forEach { opt ->
-                                val optLetter = opt.substringBefore(".").trim()
-                                val optText = opt.substringAfter(".").trim()
-                                val isSelected = selectedOption == optLetter
-                                val isAnswer = showAnswer && optLetter == currentQuestion.answer.trim()
+                        // 判断题：显示正确/错误选项
+                        if (isJudge) {
+                            listOf("正确", "错误").forEach { opt ->
+                                val isSelected = selectedOptions.contains(opt)
+                                val isAnswer = showAnswer && opt == currentQuestion.answer
 
                                 Card(
-                                    onClick = {
-                                        if (!showAnswer) selectedOption = optLetter
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
+                                    onClick = { if (!showAnswer) selectedOptions = setOf(opt) },
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                     colors = CardDefaults.cardColors(
                                         containerColor = when {
                                             isAnswer -> Color(0xFFE8F5E9)
@@ -166,23 +129,71 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                                             else -> Color.White
                                         }
                                     ),
-                                    border = if (isSelected || isAnswer) {
-                                        androidx.compose.foundation.BorderStroke(
-                                            1.5.dp,
-                                            when {
-                                                isAnswer -> Color(0xFF4CAF50)
-                                                isSelected && !showAnswer -> Color(0xFF2196F3)
-                                                else -> Color(0xFFF44336)
-                                            }
-                                        )
-                                    } else null
+                                    border = if (isSelected || isAnswer) androidx.compose.foundation.BorderStroke(
+                                        1.5.dp,
+                                        when {
+                                            isAnswer -> Color(0xFF4CAF50)
+                                            isSelected && !showAnswer -> Color(0xFF2196F3)
+                                            else -> Color(0xFFF44336)
+                                        }
+                                    ) else null
                                 ) {
-                                    Row(
+                                    Text(
+                                        opt,
                                         modifier = Modifier.padding(14.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
+                                        fontSize = 16.sp,
+                                        color = when {
+                                            isAnswer -> Color(0xFF4CAF50)
+                                            isSelected && showAnswer && !isAnswer -> Color(0xFFF44336)
+                                            isSelected -> Color(0xFF2196F3)
+                                            else -> Color(0xFF212121)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        // 有选项的题目（单选/多选）
+                        else if (currentQuestion.options.isNotEmpty()) {
+                            val options = currentQuestion.options.split("|")
+                            options.forEach { opt ->
+                                val optLetter = opt.substringBefore(".").trim()
+                                val optText = opt.substringAfter(".").trim()
+                                val isSelected = selectedOptions.contains(optLetter)
+                                val isAnswer = showAnswer && currentQuestion.answer.trim().contains(optLetter)
+
+                                Card(
+                                    onClick = {
+                                        if (!showAnswer) {
+                                            selectedOptions = if (isMultiSelect) {
+                                                // 多选：切换选中状态
+                                                if (isSelected) selectedOptions - optLetter else selectedOptions + optLetter
+                                            } else {
+                                                // 单选：替换
+                                                setOf(optLetter)
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = when {
+                                            isAnswer -> Color(0xFFE8F5E9)
+                                            isSelected && !showAnswer -> Color(0xFFE3F2FD)
+                                            isSelected && showAnswer && !isAnswer -> Color(0xFFFFEBEE)
+                                            else -> Color.White
+                                        }
+                                    ),
+                                    border = if (isSelected || isAnswer) androidx.compose.foundation.BorderStroke(
+                                        1.5.dp,
+                                        when {
+                                            isAnswer -> Color(0xFF4CAF50)
+                                            isSelected && !showAnswer -> Color(0xFF2196F3)
+                                            else -> Color(0xFFF44336)
+                                        }
+                                    ) else null
+                                ) {
+                                    Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            text = "$optLetter.",
+                                            "$optLetter.",
                                             fontSize = 16.sp,
                                             fontWeight = FontWeight.Medium,
                                             color = when {
@@ -194,7 +205,7 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = optText,
+                                            optText,
                                             fontSize = 15.sp,
                                             color = when {
                                                 isAnswer -> Color(0xFF4CAF50)
@@ -206,9 +217,10 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                                 }
                             }
                         } else {
+                            // 填空题
                             OutlinedTextField(
-                                value = selectedOption ?: "",
-                                onValueChange = { if (!showAnswer) selectedOption = it },
+                                value = selectedOptions.firstOrNull() ?: "",
+                                onValueChange = { if (!showAnswer) selectedOptions = setOf(it) },
                                 label = { Text("请输入答案") },
                                 modifier = Modifier.fillMaxWidth(),
                                 enabled = !showAnswer
@@ -220,17 +232,18 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                         if (!showAnswer) {
                             Button(
                                 onClick = {
-                                    if (selectedOption != null) {
+                                    if (selectedOptions.isNotEmpty()) {
                                         showAnswer = true
-                                        isCorrect = selectedOption == currentQuestion.answer.trim()
+                                        // 多选判断：排序后比较
+                                        val userAns = selectedOptions.sorted().joinToString("")
+                                        val correctAns = currentQuestion.answer.trim().toList().sorted().joinToString("")
+                                        isCorrect = userAns == correctAns
                                         if (isCorrect == false) {
-                                            scope.launch {
-                                                repo.markWrong(currentQuestion.id)
-                                            }
+                                            scope.launch { repo.markWrong(currentQuestion.id) }
                                         }
                                     }
                                 },
-                                enabled = selectedOption != null,
+                                enabled = selectedOptions.isNotEmpty(),
                                 modifier = Modifier.fillMaxWidth().height(48.dp),
                                 shape = MaterialTheme.shapes.medium
                             ) {
@@ -268,39 +281,28 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
 
                             Spacer(modifier = Modifier.height(24.dp))
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 OutlinedButton(
                                     onClick = {
                                         if (currentIndex > 0) {
                                             currentIndex--
                                             showAnswer = false
-                                            selectedOption = null
+                                            selectedOptions = emptySet()
                                             isCorrect = null
                                         }
                                     },
                                     enabled = currentIndex > 0
-                                ) {
-                                    Text("上一题")
-                                }
+                                ) { Text("上一题") }
 
                                 if (currentIndex < questions.size - 1) {
                                     Button(onClick = {
                                         currentIndex++
                                         showAnswer = false
-                                        selectedOption = null
+                                        selectedOptions = emptySet()
                                         isCorrect = null
-                                    }) {
-                                        Text("下一题")
-                                    }
+                                    }) { Text("下一题") }
                                 } else {
-                                    Button(onClick = {
-                                        (context as? ComponentActivity)?.finish()
-                                    }) {
-                                        Text("完成")
-                                    }
+                                    Button(onClick = { (context as? ComponentActivity)?.finish() }) { Text("完成") }
                                 }
                             }
                         }
