@@ -69,8 +69,12 @@ class ScreenCaptureService : Service() {
         startForeground(NOTIFICATION_ID, createNotification())
         Log.d(TAG, "Service created")
 
-        // 注册广播接收者
-        registerReceiver(captureReceiver, IntentFilter("com.questionhelper.CAPTURE_SCREEN"), if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Context.RECEIVER_NOT_EXPORTED else 0)
+        val filter = IntentFilter("com.questionhelper.CAPTURE_SCREEN")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(captureReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(captureReceiver, filter)
+        }
     }
 
     private val captureReceiver = object : BroadcastReceiver() {
@@ -150,7 +154,7 @@ class ScreenCaptureService : Service() {
             mediaProjection = manager.getMediaProjection(resultCode, resultData)
             if (mediaProjection == null) {
                 Log.e(TAG, "getMediaProjection returned null")
-                Toast.makeText(this, "录屏初始化失败：无法获取投影", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "录屏初始化失败", Toast.LENGTH_SHORT).show()
                 return
             }
 
@@ -165,7 +169,7 @@ class ScreenCaptureService : Service() {
             setupImageReader()
             isInitialized = true
             ScreenCaptureService.isInitialized = true
-            Log.d(TAG, "MediaProjection initialized successfully")
+            Log.d(TAG, "MediaProjection initialized")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize MediaProjection", e)
             Toast.makeText(this, "录屏初始化失败：${e.message}", Toast.LENGTH_LONG).show()
@@ -192,7 +196,7 @@ class ScreenCaptureService : Service() {
     }
 
     private fun captureArea(rect: Rect) {
-        Log.d(TAG, "captureArea called, isInitialized=$isInitialized, imageReader=${imageReader != null}")
+        Log.d(TAG, "captureArea called, isInitialized=$isInitialized")
         if (!isInitialized || imageReader == null) {
             handler.post { Toast.makeText(this, "录屏服务未就绪，请重新授权", Toast.LENGTH_SHORT).show() }
             return
@@ -202,7 +206,6 @@ class ScreenCaptureService : Service() {
 
         handler.postDelayed({
             try {
-                // 直接获取图像，用重试机制替代不可靠的 cachedImage
                 var image: Image? = null
                 var retryCount = 0
                 while (image == null && retryCount < 10) {
@@ -213,10 +216,10 @@ class ScreenCaptureService : Service() {
                     }
                 }
 
-                Log.d(TAG, "acquireLatestImage result: ${image != null}, retryCount=$retryCount")
+                Log.d(TAG, "acquireLatestImage: ${image != null}, retry=$retryCount")
 
                 if (image == null) {
-                    handler.post { Toast.makeText(this, "截图失败：无法获取屏幕图像，请重试", Toast.LENGTH_LONG).show() }
+                    handler.post { Toast.makeText(this, "截图失败：无法获取屏幕图像", Toast.LENGTH_LONG).show() }
                     return@postDelayed
                 }
 
@@ -241,7 +244,10 @@ class ScreenCaptureService : Service() {
                     return@postDelayed
                 }
 
-                val cropped = Bitmap.createBitmap(bitmap, safeRect.left, safeRect.top, safeRect.width(), safeRect.height())
+                val cropped = Bitmap.createBitmap(
+                    bitmap, safeRect.left, safeRect.top,
+                    safeRect.width(), safeRect.height()
+                )
                 bitmap.recycle()
 
                 handler.post { Toast.makeText(this, "正在识别...", Toast.LENGTH_SHORT).show() }
@@ -283,12 +289,13 @@ class ScreenCaptureService : Service() {
                     val repo = QuestionRepository(QuestionApp.database.questionDao())
                     val question = repo.searchQuestion(text.take(50))
                     handler.post {
-                        startActivity(Intent(this@ScreenCaptureService, SearchResultActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        val intent = Intent(this@ScreenCaptureService, SearchResultActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                             putExtra("question", question?.content ?: text)
                             putExtra("answer", question?.answer ?: "未在题库中找到匹配题目")
                             putExtra("analysis", question?.analysis ?: "")
-                        })
+                        }
+                        startActivity(intent)
                     }
                 } else {
                     handler.post { Toast.makeText(this@ScreenCaptureService, "未识别到文字", Toast.LENGTH_SHORT).show() }

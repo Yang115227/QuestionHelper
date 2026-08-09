@@ -52,7 +52,6 @@ class FloatWindowService : Service() {
                 context.startActivity(intent)
                 return
             }
-            // Android 8.0+ 必须用 startForegroundService
             val intent = Intent(context, FloatWindowService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 ContextCompat.startForegroundService(context, intent)
@@ -69,7 +68,6 @@ class FloatWindowService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-        // 前台服务通知
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             createNotificationChannel()
         }
@@ -180,18 +178,15 @@ class FloatWindowService : Service() {
             else
                 WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         )
 
-        // 读取记忆的选区
         val savedRect = loadCropRect()
 
         cropView = CropOverlayView(this).apply {
-            if (savedRect != null) {
-                setInitialRect(savedRect)
-            }
+            if (savedRect != null) setInitialRect(savedRect)
             onCropConfirmed = { rect ->
                 saveCropRect(rect)
                 removeCropViewOnly()
@@ -201,9 +196,7 @@ class FloatWindowService : Service() {
                     isShowingCrop = false
                 }, 200)
             }
-            onCropCanceled = {
-                hideCropView()
-            }
+            onCropCanceled = { hideCropView() }
         }
 
         try {
@@ -217,11 +210,7 @@ class FloatWindowService : Service() {
 
     private fun removeCropViewOnly() {
         cropView?.let {
-            try {
-                windowManager.removeView(it)
-            } catch (e: Exception) {
-                Log.e(TAG, "Remove crop view failed", e)
-            }
+            try { windowManager.removeView(it) } catch (e: Exception) { Log.e(TAG, "Remove crop view failed", e) }
             cropView = null
         }
     }
@@ -234,10 +223,8 @@ class FloatWindowService : Service() {
 
     private fun captureAndSearch(rect: Rect) {
         Log.d(TAG, "captureAndSearch: $rect")
-
         when {
             ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized -> {
-                // 用 Intent 直接启动 Service 传递数据，替代不可靠的广播
                 val intent = Intent(this, ScreenCaptureService::class.java).apply {
                     action = "CAPTURE"
                     putExtra("rect", rect)
@@ -315,9 +302,7 @@ class FloatWindowService : Service() {
         }
     }
 
-    private fun dpToPx(dp: Int): Int {
-        return (dp * resources.displayMetrics.density).toInt()
-    }
+    private fun dpToPx(dp: Int): Int = (dp * resources.displayMetrics.density).toInt()
 
     override fun onDestroy() {
         super.onDestroy()
