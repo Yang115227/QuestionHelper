@@ -33,6 +33,10 @@ class QuestionRepository(private val dao: QuestionDao) {
         dao.deleteQuestion(question)
     }
 
+    suspend fun deleteQuestionById(id: Long) = withContext(Dispatchers.IO) {
+        dao.deleteQuestionById(id)
+    }
+
     suspend fun getQuestionCount(): Int = withContext(Dispatchers.IO) {
         dao.getQuestionCount()
     }

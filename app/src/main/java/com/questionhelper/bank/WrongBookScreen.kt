@@ -88,15 +88,18 @@ fun WrongBookScreen() {
     showDeleteDialog?.let { q ->
         AlertDialog(
             onDismissRequest = { showDeleteDialog = null },
-            title = { Text("移出错题本") },
-            text = { Text("确定将此题从错题本移除吗？") },
+            title = { Text("删除题目") },
+            text = { Text("确定彻底删除这道题吗？此操作不可恢复。") },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        scope.launch { repo.clearWrong(q.id) }
+                        scope.launch {
+                            repo.deleteQuestionById(q.id)
+                        }
                         showDeleteDialog = null
-                    }
-                ) { Text("移除", color = MaterialTheme.colorScheme.error) }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("删除") }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = null }) { Text("取消") }

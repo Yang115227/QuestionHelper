@@ -3,6 +3,7 @@ package com.questionhelper.bank
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -72,8 +73,13 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
     }
 
     val currentQuestion = questions.getOrNull(currentIndex)
-    val isMultiSelect = currentQuestion?.answer?.length?.let { it > 1 } ?: false
-    val isJudge = currentQuestion?.answer == "正确" || currentQuestion?.answer == "错误"
+    val isMultiSelect = currentQuestion?.answer?.let { answer ->
+        answer.filter { it in 'A'..'Z' }.toSet().size > 1
+    } ?: false
+    val isJudge = currentQuestion?.let { q ->
+        val ans = q.answer.trim()
+        q.options.isBlank() && (ans in listOf("正确", "错误", "对", "错", "A", "B"))
+    } ?: false
 
     Scaffold(
         topBar = {
@@ -114,12 +120,16 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
 
                         // 判断题：显示正确/错误选项
                         if (isJudge) {
-                            listOf("正确", "错误").forEach { opt ->
-                                val isSelected = selectedOptions.contains(opt)
-                                val isAnswer = showAnswer && opt == currentQuestion.answer
+                            val judgeOptions = listOf(
+                                "A" to "正确",
+                                "B" to "错误"
+                            )
+                            judgeOptions.forEach { (letter, text) ->
+                                val isSelected = selectedOptions.contains(letter)
+                                val isAnswer = showAnswer && currentQuestion.answer.trim() == letter
 
                                 Card(
-                                    onClick = { if (!showAnswer) selectedOptions = setOf(opt) },
+                                    onClick = { if (!showAnswer) selectedOptions = setOf(letter) },
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                     colors = CardDefaults.cardColors(
                                         containerColor = when {
@@ -129,7 +139,7 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                                             else -> Color.White
                                         }
                                     ),
-                                    border = if (isSelected || isAnswer) androidx.compose.foundation.BorderStroke(
+                                    border = if (isSelected || isAnswer) BorderStroke(
                                         1.5.dp,
                                         when {
                                             isAnswer -> Color(0xFF4CAF50)
@@ -138,17 +148,29 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                                         }
                                     ) else null
                                 ) {
-                                    Text(
-                                        opt,
-                                        modifier = Modifier.padding(14.dp),
-                                        fontSize = 16.sp,
-                                        color = when {
-                                            isAnswer -> Color(0xFF4CAF50)
-                                            isSelected && showAnswer && !isAnswer -> Color(0xFFF44336)
-                                            isSelected -> Color(0xFF2196F3)
-                                            else -> Color(0xFF212121)
-                                        }
-                                    )
+                                    Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            "$letter.",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = when {
+                                                isAnswer -> Color(0xFF4CAF50)
+                                                isSelected && showAnswer && !isAnswer -> Color(0xFFF44336)
+                                                isSelected -> Color(0xFF2196F3)
+                                                else -> Color(0xFF212121)
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text,
+                                            fontSize = 15.sp,
+                                            color = when {
+                                                isAnswer -> Color(0xFF4CAF50)
+                                                isSelected && showAnswer && !isAnswer -> Color(0xFFF44336)
+                                                else -> Color(0xFF424242)
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -182,7 +204,7 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                                             else -> Color.White
                                         }
                                     ),
-                                    border = if (isSelected || isAnswer) androidx.compose.foundation.BorderStroke(
+                                    border = if (isSelected || isAnswer) BorderStroke(
                                         1.5.dp,
                                         when {
                                             isAnswer -> Color(0xFF4CAF50)
@@ -234,9 +256,23 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                                 onClick = {
                                     if (selectedOptions.isNotEmpty()) {
                                         showAnswer = true
-                                        // 多选判断：排序后比较
-                                        val userAns = selectedOptions.sorted().joinToString("")
-                                        val correctAns = currentQuestion.answer.trim().toList().sorted().joinToString("")
+                                        val rawAnswer = currentQuestion.answer.trim()
+                                        val correctAns = when {
+                                            isJudge -> {
+                                                when (rawAnswer) {
+                                                    "正确", "对", "A" -> "A"
+                                                    "错误", "错", "B" -> "B"
+                                                    else -> rawAnswer
+                                                }
+                                            }
+                                            isMultiSelect -> rawAnswer.filter { it in 'A'..'Z' }.toList().sorted().joinToString("")
+                                            else -> rawAnswer.filter { it in 'A'..'Z' }
+                                        }
+                                        val userAns = if (isJudge) {
+                                            selectedOptions.firstOrNull() ?: ""
+                                        } else {
+                                            selectedOptions.sorted().joinToString("")
+                                        }
                                         isCorrect = userAns == correctAns
                                         if (isCorrect == false) {
                                             scope.launch { repo.markWrong(currentQuestion.id) }

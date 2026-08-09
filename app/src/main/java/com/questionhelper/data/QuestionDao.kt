@@ -32,6 +32,9 @@ interface QuestionDao {
     @Delete
     suspend fun deleteQuestion(question: Question)
 
+    @Query("DELETE FROM questions WHERE id = :id")
+    suspend fun deleteQuestionById(id: Long)
+
     @Query("SELECT DISTINCT subject FROM questions")
     fun getAllSubjects(): Flow<List<String>>
 
