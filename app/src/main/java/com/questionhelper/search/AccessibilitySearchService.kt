@@ -1,8 +1,6 @@
 package com.questionhelper.search
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityService.ScreenshotResult
-import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -83,34 +81,41 @@ class AccessibilitySearchService : AccessibilityService() {
     @RequiresApi(Build.VERSION_CODES.R)
     private fun captureWithAccessibility(rect: Rect) {
         val executor = Executors.newSingleThreadExecutor()
-        val callback = TakeScreenshotCallback { result: ScreenshotResult? ->
-            val bitmap = result?.bitmap
-            if (bitmap != null) {
-                try {
-                    val safeRect = Rect(
-                        rect.left.coerceIn(0, bitmap.width),
-                        rect.top.coerceIn(0, bitmap.height),
-                        rect.right.coerceIn(0, bitmap.width),
-                        rect.bottom.coerceIn(0, bitmap.height)
-                    )
-                    if (safeRect.width() > 0 && safeRect.height() > 0) {
-                        val cropped = Bitmap.createBitmap(bitmap, safeRect.left, safeRect.top, safeRect.width(), safeRect.height())
-                        bitmap.recycle()
-                        processBitmap(cropped)
-                    } else {
-                        Log.e(TAG, "Invalid rect: $safeRect")
-                        bitmap.recycle()
+        takeScreenshot(Display.DEFAULT_DISPLAY, executor,
+            object : AccessibilityService.TakeScreenshotCallback {
+                override fun onScreenshotTaken(screenshotResult: AccessibilityService.ScreenshotResult?) {
+                    val bitmap = screenshotResult?.let {
+                        try {
+                            val m = it.javaClass.getMethod("getBitmap")
+                            m.invoke(it) as? Bitmap
+                        } catch (_: Exception) { null }
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Crop failed", e)
-                    bitmap.recycle()
+                    if (bitmap != null) {
+                        try {
+                            val safeRect = Rect(
+                                rect.left.coerceIn(0, bitmap.width),
+                                rect.top.coerceIn(0, bitmap.height),
+                                rect.right.coerceIn(0, bitmap.width),
+                                rect.bottom.coerceIn(0, bitmap.height)
+                            )
+                            if (safeRect.width() > 0 && safeRect.height() > 0) {
+                                val cropped = Bitmap.createBitmap(bitmap, safeRect.left, safeRect.top, safeRect.width(), safeRect.height())
+                                bitmap.recycle()
+                                processBitmap(cropped)
+                            } else {
+                                Log.e(TAG, "Invalid rect: $safeRect")
+                                bitmap.recycle()
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Crop failed", e)
+                            bitmap.recycle()
+                        }
+                    } else {
+                        Log.e(TAG, "Screenshot returned null")
+                        handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败", Toast.LENGTH_SHORT).show() }
+                    }
                 }
-            } else {
-                Log.e(TAG, "Screenshot returned null")
-                handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败", Toast.LENGTH_SHORT).show() }
-            }
-        }
-        takeScreenshot(Display.DEFAULT_DISPLAY, executor, callback)
+            })
     }
 
     private fun processBitmap(bitmap: Bitmap) {
