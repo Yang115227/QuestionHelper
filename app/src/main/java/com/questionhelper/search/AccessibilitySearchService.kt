@@ -83,8 +83,8 @@ class AccessibilitySearchService : AccessibilityService() {
         val executor = Executors.newSingleThreadExecutor()
         takeScreenshot(Display.DEFAULT_DISPLAY, executor,
             object : AccessibilityService.TakeScreenshotCallback {
-                override fun onSuccess(screenshotResult: AccessibilityService.ScreenshotResult?) {
-                    val bitmap = screenshotResult?.let {
+                override fun onSuccess(result: Any?) {
+                    val bitmap = result?.let {
                         try {
                             val m = it.javaClass.getMethod("getBitmap")
                             m.invoke(it) as? Bitmap
