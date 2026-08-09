@@ -4,8 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -25,9 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import com.questionhelper.bank.QuestionBankActivity
-import com.questionhelper.data.QuestionRepository
 import com.questionhelper.search.CameraSearchActivity
 import com.questionhelper.search.FloatWindowService
 import com.questionhelper.search.ScreenCaptureService
@@ -42,8 +38,6 @@ data class FeatureItem(
 )
 
 class MainActivity : ComponentActivity() {
-    private val handler = Handler(Looper.getMainLooper())
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val showCaptureChoice = intent.getBooleanExtra("show_capture_choice", false)
@@ -69,13 +63,9 @@ class MainActivity : ComponentActivity() {
                 putExtra("result_code", resultCode)
                 putExtra("result_data", data)
             }
-            // ✅ 关键修复：Android 8.0+ 启动前台服务必须用 startForegroundService
-            ContextCompat.startForegroundService(this, serviceIntent)
+            startService(serviceIntent)
             Toast.makeText(this, "录屏服务已启动", Toast.LENGTH_SHORT).show()
-
-            handler.postDelayed({
-                FloatWindowService.start(this)
-            }, 300)
+            FloatWindowService.start(this)
         } else if (requestCode == 1001) {
             Toast.makeText(this, "录屏权限被拒绝", Toast.LENGTH_SHORT).show()
         }
@@ -140,6 +130,7 @@ fun MainScreen(
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
+            // 移除了无障碍设置和录屏权限入口
             val features = listOf(
                 FeatureItem("拍照搜题", Icons.Default.CameraAlt, "拍摄题目自动识别") {
                     context.startActivity(Intent(context, CameraSearchActivity::class.java))
@@ -150,11 +141,8 @@ fun MainScreen(
                         context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
                         return@FeatureItem
                     }
-
-                    // ✅ 加上 isInitialized 判断
-                    val hasScreenCapture = ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized
+                    val hasScreenCapture = ScreenCaptureService.isRunning
                     val hasAccessibility = isAccessibilityEnabled(context)
-
                     if (!hasScreenCapture && !hasAccessibility) {
                         showCaptureDialog = true
                     } else {
@@ -169,12 +157,6 @@ fun MainScreen(
                     val intent = Intent(context, QuestionBankActivity::class.java)
                     intent.putExtra("mode", "wrong")
                     context.startActivity(intent)
-                },
-                FeatureItem("无障碍设置", Icons.Default.Accessibility, "开启无障碍服务") {
-                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                },
-                FeatureItem("录屏权限", Icons.Default.ScreenShare, "开启录屏截图权限") {
-                    onRequestMediaProjection()
                 }
             )
 
@@ -198,21 +180,15 @@ fun MainScreen(
                 Column {
                     Text("悬浮搜题需要截图能力，请选择一种方式：")
                     Spacer(modifier = Modifier.height(12.dp))
-
                     Card(
                         onClick = {
                             showCaptureDialog = false
                             onRequestMediaProjection()
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        )
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.ScreenShare, contentDescription = null)
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
@@ -221,9 +197,7 @@ fun MainScreen(
                             }
                         }
                     }
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     Card(
                         onClick = {
                             showCaptureDialog = false
@@ -231,14 +205,9 @@ fun MainScreen(
                             context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer
-                        )
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Accessibility, contentDescription = null)
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
@@ -251,9 +220,7 @@ fun MainScreen(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { showCaptureDialog = false }) {
-                    Text("取消")
-                }
+                TextButton(onClick = { showCaptureDialog = false }) { Text("取消") }
             }
         )
     }
@@ -277,37 +244,20 @@ fun FeatureCard(feature: FeatureItem) {
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                feature.icon,
-                contentDescription = feature.title,
-                modifier = Modifier.size(40.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
+            Icon(feature.icon, contentDescription = feature.title, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.height(8.dp))
             Text(feature.title, fontSize = 16.sp)
-            Text(
-                feature.description,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
+            Text(feature.description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         }
     }
 }
 
 private fun isAccessibilityEnabled(context: Context): Boolean {
     return try {
-        val enabledServices = Settings.Secure.getString(
-            context.contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: return false
+        val enabledServices = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
         enabledServices.contains("com.questionhelper/.search.AccessibilitySearchService")
-    } catch (e: Exception) {
-        false
-    }
+    } catch (e: Exception) { false }
 }

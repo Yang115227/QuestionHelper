@@ -13,7 +13,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -236,3 +235,51 @@ private fun formatDate(time: Long): String {
     return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(time))
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WrongBookScreen() {
+    val context = LocalContext.current
+    val repo = remember { QuestionRepository(QuestionApp.database.questionDao()) }
+    var questions by remember { mutableStateOf<List<com.questionhelper.data.Question>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        repo.wrongQuestions.collect { questions = it }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("错题本") },
+                navigationIcon = {
+                    IconButton(onClick = { (context as? ComponentActivity)?.finish() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(questions, key = { it.id }) { q ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        val intent = Intent(context, PracticeActivity::class.java).apply {
+                            putExtra("mode", "single")
+                            putExtra("questionId", q.id)
+                        }
+                        context.startActivity(intent)
+                    }
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(q.content.take(80) + if (q.content.length > 80) "..." else "")
+                        Spacer(modifier = Modifier.height(4.dp))
+                        AssistChip(onClick = {}, label = { Text(q.subject) })
+                    }
+                }
+            }
+        }
+    }
+}
