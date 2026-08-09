@@ -1,6 +1,8 @@
 package com.questionhelper.search
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityService.ScreenshotResult
+import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -80,7 +82,8 @@ class AccessibilitySearchService : AccessibilityService() {
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun captureWithAccessibility(rect: Rect) {
-        takeScreenshot(Display.DEFAULT_DISPLAY, Executors.newSingleThreadExecutor()) { result ->
+        val executor = Executors.newSingleThreadExecutor()
+        val callback = TakeScreenshotCallback { result: ScreenshotResult? ->
             val bitmap = result?.bitmap
             if (bitmap != null) {
                 try {
@@ -90,7 +93,6 @@ class AccessibilitySearchService : AccessibilityService() {
                         rect.right.coerceIn(0, bitmap.width),
                         rect.bottom.coerceIn(0, bitmap.height)
                     )
-
                     if (safeRect.width() > 0 && safeRect.height() > 0) {
                         val cropped = Bitmap.createBitmap(bitmap, safeRect.left, safeRect.top, safeRect.width(), safeRect.height())
                         bitmap.recycle()
@@ -108,6 +110,7 @@ class AccessibilitySearchService : AccessibilityService() {
                 handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败", Toast.LENGTH_SHORT).show() }
             }
         }
+        takeScreenshot(Display.DEFAULT_DISPLAY, executor, callback)
     }
 
     private fun processBitmap(bitmap: Bitmap) {
