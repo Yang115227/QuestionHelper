@@ -10,7 +10,6 @@ import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import java.util.concurrent.Executors
 import android.util.Log
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
@@ -81,9 +80,10 @@ class AccessibilitySearchService : AccessibilityService() {
     @RequiresApi(Build.VERSION_CODES.R)
     private fun captureWithAccessibility(rect: Rect) {
         try {
-            val executor = Executors.newSingleThreadExecutor()
-            val method = AccessibilityService::class.java.getMethod("takeScreenshot", Int::class.javaPrimitiveType, Executor::class.java, Class.forName("android.accessibilityservice.AccessibilityService\$TakeScreenshotCallback"))
+            val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
             val callbackClass = Class.forName("android.accessibilityservice.AccessibilityService\$TakeScreenshotCallback")
+            val paramTypes = arrayOf<Class<*>>(Int::class.javaPrimitiveType!!, java.util.concurrent.Executor::class.java, callbackClass)
+            val method = AccessibilityService::class.java.getDeclaredMethod("takeScreenshot", *paramTypes)
             val proxy = java.lang.reflect.Proxy.newProxyInstance(callbackClass.classLoader, arrayOf(callbackClass)) { _, proxyMethod, args ->
                 if (proxyMethod.name == "onSuccess") {
                     val result = args?.getOrNull(0)
