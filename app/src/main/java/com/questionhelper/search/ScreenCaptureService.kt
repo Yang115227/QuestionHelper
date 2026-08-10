@@ -21,6 +21,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.content.pm.ServiceInfo
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
@@ -66,7 +67,15 @@ class ScreenCaptureService : Service() {
         isRunning = true
         ocrManager = OcrManager(this)
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID,
+                createNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, createNotification())
+        }
         Log.d(TAG, "Service created")
 
         val filter = IntentFilter("com.questionhelper.CAPTURE_SCREEN")

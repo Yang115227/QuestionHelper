@@ -1,5 +1,6 @@
 package com.questionhelper
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.questionhelper.bank.QuestionBankActivity
 import com.questionhelper.data.QuestionRepository
+import com.questionhelper.search.AccessibilitySearchService
 import com.questionhelper.search.CameraSearchActivity
 import com.questionhelper.search.FloatWindowService
 import com.questionhelper.search.ScreenCaptureService
@@ -55,6 +57,30 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkServiceStateAndStartFloatWindow()
+    }
+
+    private fun checkServiceStateAndStartFloatWindow() {
+        val hasOverlayPermission = FloatWindowService.checkPermission(this)
+        val hasAccessibility = isAccessibilityServiceEnabled()
+        val hasScreenCapture = ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized
+
+        if (hasOverlayPermission && (hasAccessibility || hasScreenCapture)) {
+            FloatWindowService.start(this)
+        }
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val expectedComponent = ComponentName(this, AccessibilitySearchService::class.java)
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        return enabledServices.contains(expectedComponent.flattenToString())
     }
 
     private fun requestMediaProjection() {
