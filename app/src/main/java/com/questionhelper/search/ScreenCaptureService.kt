@@ -27,6 +27,7 @@ import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import com.questionhelper.QuestionApp
 import com.questionhelper.data.QuestionRepository
 import com.questionhelper.ocr.OcrManager
@@ -38,10 +39,25 @@ class ScreenCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
-    private lateinit var ocrManager: OcrManager
+    private var ocrManager: OcrManager? = null
     private val handler = Handler(Looper.getMainLooper())
     private var metrics: DisplayMetrics? = null
     private var isInitialized = false
+
+    private fun ensureOcrManager(): OcrManager? {
+        if (ocrManager == null) {
+            try {
+                ocrManager = OcrManager(this)
+                Log.d(TAG, "OcrManager initialized lazily")
+            } catch (e: Exception) {
+                Log.e(TAG, "OcrManager init failed", e)
+                handler.post {
+                    Toast.makeText(this, "OCR 模型加载失败：${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        return ocrManager
+    }
 
     companion object {
         @Volatile
@@ -65,18 +81,14 @@ class ScreenCaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
-        ocrManager = OcrManager(this)
         createNotificationChannel()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIFICATION_ID,
-                createNotification(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
+        val serviceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
         } else {
-            startForeground(NOTIFICATION_ID, createNotification())
+            0
         }
-        Log.d(TAG, "Service created")
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, createNotification(), serviceType)
+        Log.d(TAG, "Service created, foregroundType=$serviceType")
 
         val filter = IntentFilter("com.questionhelper.CAPTURE_SCREEN")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -289,9 +301,16 @@ class ScreenCaptureService : Service() {
     }
 
     private fun processBitmap(bitmap: Bitmap) {
+        val manager = ensureOcrManager()
+        if (manager == null) {
+            handler.post { Toast.makeText(this, "OCR 未初始化，无法识别", Toast.LENGTH_SHORT).show() }
+            bitmap.recycle()
+            return
+        }
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val text = ocrManager.recognizeFromBitmap(bitmap)
+                val text = manager.recognizeFromBitmap(bitmap)
                 bitmap.recycle()
 
                 if (text.isNotEmpty()) {
@@ -325,7 +344,8 @@ class ScreenCaptureService : Service() {
         virtualDisplay?.release()
         mediaProjection?.stop()
         imageReader?.close()
-        ocrManager.close()
+        ocrManager?.close()
+        ocrManager = null
         Log.d(TAG, "Service destroyed")
     }
 }

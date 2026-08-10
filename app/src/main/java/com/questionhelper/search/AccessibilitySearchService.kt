@@ -23,10 +23,25 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class AccessibilitySearchService : AccessibilityService() {
-    private lateinit var ocrManager: OcrManager
+    private var ocrManager: OcrManager? = null
     private val handler = Handler(Looper.getMainLooper())
     private val TAG = "AccessibilitySearch"
     private var receiverRegistered = false
+
+    private fun ensureOcrManager(): OcrManager? {
+        if (ocrManager == null) {
+            try {
+                ocrManager = OcrManager(this)
+                Log.d(TAG, "OcrManager initialized lazily")
+            } catch (e: Exception) {
+                Log.e(TAG, "OcrManager init failed", e)
+                handler.post {
+                    Toast.makeText(this, "OCR 模型加载失败：${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        return ocrManager
+    }
 
     private val captureReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -40,7 +55,6 @@ class AccessibilitySearchService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        ocrManager = OcrManager(this)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val filter = IntentFilter("com.questionhelper.ACCESSIBILITY_CAPTURE")
@@ -128,9 +142,16 @@ class AccessibilitySearchService : AccessibilityService() {
     }
 
     private fun processBitmap(bitmap: Bitmap) {
+        val manager = ensureOcrManager()
+        if (manager == null) {
+            handler.post { Toast.makeText(this, "OCR 未初始化，无法识别", Toast.LENGTH_SHORT).show() }
+            bitmap.recycle()
+            return
+        }
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val text = ocrManager.recognizeFromBitmap(bitmap)
+                val text = manager.recognizeFromBitmap(bitmap)
                 bitmap.recycle()
 
                 if (text.isNotEmpty()) {
@@ -162,6 +183,7 @@ class AccessibilitySearchService : AccessibilityService() {
         if (receiverRegistered && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try { unregisterReceiver(captureReceiver) } catch (_: Exception) {}
         }
-        if (::ocrManager.isInitialized) ocrManager.close()
+        ocrManager?.close()
+        ocrManager = null
     }
 }

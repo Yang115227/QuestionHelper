@@ -8,9 +8,12 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -45,9 +48,21 @@ data class FeatureItem(
 
 class MainActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
+    private lateinit var screenCaptureLauncher: ActivityResultLauncher<Intent>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        screenCaptureLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == RESULT_OK && result.data != null) {
+                startScreenCaptureService(result.resultCode, result.data!!)
+            } else {
+                Toast.makeText(this, "录屏权限被拒绝", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         val showCaptureChoice = intent.getBooleanExtra("show_capture_choice", false)
         setContent {
             QuestionHelperTheme {
@@ -85,22 +100,26 @@ class MainActivity : ComponentActivity() {
 
     private fun requestMediaProjection() {
         val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        startActivityForResult(manager.createScreenCaptureIntent(), 1001)
+        try {
+            screenCaptureLauncher.launch(manager.createScreenCaptureIntent())
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Launch screen capture intent failed", e)
+            Toast.makeText(this, "无法启动录屏授权：${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 1001 && resultCode == RESULT_OK && data != null) {
-            val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
-                putExtra("result_code", resultCode)
-                putExtra("result_data", data)
-            }
-            // ✅ 修复：Android 8.0+ 启动前台服务必须用 startForegroundService
+    private fun startScreenCaptureService(resultCode: Int, data: Intent) {
+        val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
+            putExtra("result_code", resultCode)
+            putExtra("result_data", data)
+        }
+        try {
             ContextCompat.startForegroundService(this, serviceIntent)
             Toast.makeText(this, "录屏服务已启动", Toast.LENGTH_SHORT).show()
             FloatWindowService.start(this)
-        } else if (requestCode == 1001) {
-            Toast.makeText(this, "录屏权限被拒绝", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Start screen capture service failed", e)
+            Toast.makeText(this, "录屏服务启动失败：${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 }
