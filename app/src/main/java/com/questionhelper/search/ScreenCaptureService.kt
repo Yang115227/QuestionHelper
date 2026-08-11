@@ -140,11 +140,12 @@ class ScreenCaptureService : Service() {
             }
         }
 
-        val resultCode = intent.getIntExtra("result_code", -1)
+        // MediaProjection 授权成功时 resultCode = RESULT_OK = -1，取消时为 0
+        val resultCode = intent.getIntExtra("result_code", android.app.Activity.RESULT_CANCELED)
         val data = intent.getParcelableExtra<Intent>("result_data")
 
-        if (resultCode == -1 || data == null) {
-            Log.e(tag, "Invalid MediaProjection data")
+        if (resultCode != android.app.Activity.RESULT_OK || data == null) {
+            Log.e(tag, "Invalid MediaProjection data, resultCode=$resultCode")
             reportInitFailed(getString(R.string.screen_capture_invalid_data))
             stopSelf()
             return START_NOT_STICKY

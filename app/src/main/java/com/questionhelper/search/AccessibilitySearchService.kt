@@ -220,21 +220,71 @@ class AccessibilitySearchService : AccessibilityService() {
      */
     private fun extractBitmap(result: Any?): Pair<Bitmap?, String?> {
         if (result == null) return null to null
-        return try {
-            val getBitmap = try {
-                result.javaClass.getMethod("getBitmap")
-            } catch (e: Throwable) {
-                return null to "getBitmap 方法不存在: ${e.message}"
+
+        val clazz = result.javaClass
+        Log.d(TAG, "Screenshot result class: ${clazz.name}")
+
+        // 1. 优先尝试 public getBitmap()
+        try {
+            val method = clazz.getMethod("getBitmap")
+            method.invoke(result)?.let {
+                if (it is Bitmap) return it to null
             }
-            val bitmap = try {
-                getBitmap.invoke(result) as? Bitmap
-            } catch (e: Throwable) {
-                return null to "getBitmap 调用失败: ${e.message}"
-            }
-            bitmap to null
         } catch (e: Throwable) {
-            null to "解析截图结果异常: ${e.message}"
+            Log.w(TAG, "getBitmap public method failed", e)
         }
+
+        // 2. 尝试 declared getBitmap()（可能是 hide API）
+        try {
+            val method = clazz.getDeclaredMethod("getBitmap")
+            method.isAccessible = true
+            method.invoke(result)?.let {
+                if (it is Bitmap) return it to null
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "getBitmap declared method failed", e)
+        }
+
+        // 3. 遍历所有方法，找返回 Bitmap 且无形参的方法
+        try {
+            clazz.methods.plus(clazz.declaredMethods).distinct().forEach { method ->
+                if (method.name.contains("Bitmap", ignoreCase = true) ||
+                    method.returnType == Bitmap::class.java) {
+                    if (method.parameterTypes.isEmpty()) {
+                        try {
+                            method.isAccessible = true
+                            method.invoke(result)?.let {
+                                if (it is Bitmap) return it to null
+                            }
+                        } catch (e: Throwable) {
+                            Log.w(TAG, "Method ${method.name} invoke failed", e)
+                        }
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Scan methods failed", e)
+        }
+
+        // 4. 尝试直接访问字段 mBitmap / bitmap
+        try {
+            clazz.getDeclaredField("mBitmap").apply {
+                isAccessible = true
+                get(result)?.let { if (it is Bitmap) return it to null }
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "mBitmap field failed", e)
+        }
+        try {
+            clazz.getDeclaredField("bitmap").apply {
+                isAccessible = true
+                get(result)?.let { if (it is Bitmap) return it to null }
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "bitmap field failed", e)
+        }
+
+        return null to "无法从 ${clazz.name} 中提取 Bitmap，请检查系统是否支持无障碍截图"
     }
 
     private fun processScreenshotBitmap(bitmap: Bitmap, rect: Rect) {
