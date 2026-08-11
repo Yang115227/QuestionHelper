@@ -40,9 +40,9 @@ class OCRPredictor(context: Context, assetPath: String) {
 
     private fun loadModels() {
         try {
-            detPredictor = loadModel("$assetPath/ch_PP-OCRv3_det_infer.nb")
-            recPredictor = loadModel("$assetPath/ch_PP-OCRv3_rec_infer.nb")
-            clsPredictor = loadModel("$assetPath/ch_ppocr_mobile_v2.0_cls_infer.nb")
+            detPredictor = loadModel("$assetPath/ch_PP-OCRv3_det_infer_opt.nb")
+            recPredictor = loadModel("$assetPath/ch_PP-OCRv3_rec_infer_opt.nb")
+            clsPredictor = loadModel("$assetPath/ch_ppocr_mobile_v2.0_cls_infer_opt.nb")
             Log.d(tag, "All models loaded")
         } catch (e: Exception) {
             Log.e(tag, "Failed to load models", e)
