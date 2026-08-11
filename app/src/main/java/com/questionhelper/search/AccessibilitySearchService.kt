@@ -119,54 +119,70 @@ class AccessibilitySearchService : AccessibilityService() {
     private fun captureWithAccessibility(rect: Rect) {
         try {
             val executor = Executors.newSingleThreadExecutor()
-            takeScreenshot(
-                Display.DEFAULT_DISPLAY,
-                executor,
-                object : AccessibilityService.TakeScreenshotCallback {
-                    override fun onSuccess(screenshotResult: AccessibilityService.ScreenshotResult) {
-                        try {
-                            val bitmap = screenshotResult.bitmap
-                            if (bitmap != null) {
-                                processScreenshotBitmap(bitmap, rect)
-                            } else {
-                                Log.e(TAG, "Screenshot returned null bitmap")
-                                handler.post {
-                                    Toast.makeText(
-                                        this@AccessibilitySearchService,
-                                        R.string.screenshot_failed_null,
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
+            val callbackClass = Class.forName("android.accessibilityservice.AccessibilityService\$TakeScreenshotCallback")
+            val paramTypes = arrayOf<Class<*>>(
+                Int::class.javaPrimitiveType!!,
+                java.util.concurrent.Executor::class.java,
+                callbackClass
+            )
+            val method = AccessibilityService::class.java.getDeclaredMethod("takeScreenshot", *paramTypes)
+            val proxy = java.lang.reflect.Proxy.newProxyInstance(
+                callbackClass.classLoader,
+                arrayOf(callbackClass)
+            ) { _, proxyMethod, args ->
+                if (proxyMethod.name == "onSuccess") {
+                    val result = args?.getOrNull(0)
+                    try {
+                        val bitmap = result?.let {
+                            try {
+                                val getBitmap = it.javaClass.getMethod("getBitmap")
+                                getBitmap.invoke(it) as? Bitmap
+                            } catch (e: Throwable) {
+                                Log.e(TAG, "getBitmap failed", e)
+                                null
                             }
-                        } catch (e: Throwable) {
-                            Log.e(TAG, "Process screenshot result failed", e)
+                        }
+                        if (bitmap != null) {
+                            processScreenshotBitmap(bitmap, rect)
+                        } else {
+                            Log.e(TAG, "Screenshot returned null bitmap")
                             handler.post {
                                 Toast.makeText(
                                     this@AccessibilitySearchService,
-                                    R.string.screenshot_crop_failed,
+                                    R.string.screenshot_failed_null,
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
-                        } finally {
-                            // Android 14+ 必须释放 ScreenshotResult，否则后续截图可能被系统拒绝
-                            releaseScreenshotResult(screenshotResult)
-                            executor.shutdown()
                         }
-                    }
-
-                    override fun onFailure(errorCode: Int) {
-                        executor.shutdown()
-                        Log.e(TAG, "Screenshot onFailure: $errorCode")
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "Process screenshot result failed", e)
                         handler.post {
                             Toast.makeText(
                                 this@AccessibilitySearchService,
-                                getString(R.string.screenshot_failed_error_code, errorCode),
+                                R.string.screenshot_crop_failed,
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
+                    } finally {
+                        // Android 14+ 必须释放 ScreenshotResult，否则后续截图可能被系统拒绝
+                        releaseScreenshotResult(result)
+                        executor.shutdown()
+                    }
+                } else if (proxyMethod.name == "onFailure") {
+                    val errorCode = args?.getOrNull(0)
+                    executor.shutdown()
+                    Log.e(TAG, "Screenshot onFailure: $errorCode")
+                    handler.post {
+                        Toast.makeText(
+                            this@AccessibilitySearchService,
+                            getString(R.string.screenshot_failed_error_code, errorCode),
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
-            )
+                null
+            }
+            method.invoke(this, Display.DEFAULT_DISPLAY, executor, proxy)
         } catch (e: Throwable) {
             Log.e(TAG, "takeScreenshot failed", e)
             handler.post {
@@ -182,14 +198,14 @@ class AccessibilitySearchService : AccessibilityService() {
     /**
      * 释放 ScreenshotResult，避免 Android 14+ 上资源泄漏导致后续截图失败。
      */
-    @RequiresApi(Build.VERSION_CODES.R)
-    private fun releaseScreenshotResult(result: AccessibilityService.ScreenshotResult) {
+    private fun releaseScreenshotResult(result: Any?) {
+        if (result == null) return
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                result.release()
-            } else {
-                // API 30-33 没有 release() 方法，依赖 GC 回收
+                val releaseMethod = result.javaClass.getMethod("release")
+                releaseMethod.invoke(result)
             }
+            // API 30-33 没有 release() 方法，依赖 GC 回收
         } catch (e: Throwable) {
             Log.w(TAG, "release screenshot result failed", e)
         }
