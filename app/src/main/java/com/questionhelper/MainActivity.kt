@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,7 +64,7 @@ class MainActivity : ComponentActivity() {
             if (result.resultCode == RESULT_OK && result.data != null) {
                 startScreenCaptureService(result.resultCode, result.data!!)
             } else {
-                Toast.makeText(this, "录屏权限被拒绝", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, R.string.permission_media_projection_denied, Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -74,7 +75,7 @@ class MainActivity : ComponentActivity() {
                 override fun onReceive(context: Context?, intent: Intent?) {
                     if (intent?.action == ScreenCaptureService.ACTION_PROJECTION_STOPPED) {
                         ScreenCaptureService.markProjectionStopped()
-                        Toast.makeText(this@MainActivity, "录屏授权已失效，请重新授权", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@MainActivity, R.string.permission_projection_stopped, Toast.LENGTH_LONG).show()
                     }
                 }
             },
@@ -118,7 +119,7 @@ class MainActivity : ComponentActivity() {
             screenCaptureLauncher.launch(manager.createScreenCaptureIntent())
         } catch (e: Exception) {
             Log.e("MainActivity", "Launch screen capture intent failed", e)
-            Toast.makeText(this, "无法启动录屏授权：${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.permission_media_projection_failed, e.message), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -129,11 +130,11 @@ class MainActivity : ComponentActivity() {
         }
         try {
             ContextCompat.startForegroundService(this, serviceIntent)
-            Toast.makeText(this, "录屏服务已启动", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.permission_screen_capture_started, Toast.LENGTH_SHORT).show()
             FloatWindowService.start(this)
         } catch (e: Exception) {
             Log.e("MainActivity", "Start screen capture service failed", e)
-            Toast.makeText(this, "录屏服务启动失败：${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.permission_screen_capture_failed, e.message), Toast.LENGTH_LONG).show()
         }
     }
 }
@@ -160,7 +161,7 @@ fun MainScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("搜题助手", fontSize = 22.sp) },
+                title = { Text(stringResource(R.string.app_title), fontSize = 22.sp) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
@@ -185,24 +186,32 @@ fun MainScreen(
                         .padding(20.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    StatItem("题库总数", "$questionCount", Icons.Default.MenuBook)
-                    StatItem("错题数量", "$wrongCount", Icons.Default.Error)
+                    StatItem(stringResource(R.string.stat_total), "$questionCount", Icons.Default.MenuBook)
+                    StatItem(stringResource(R.string.stat_wrong), "$wrongCount", Icons.Default.Error)
                 }
             }
 
             Text(
-                text = "功能列表",
+                text = stringResource(R.string.feature_list),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
             val features = listOf(
-                FeatureItem("拍照搜题", Icons.Default.CameraAlt, "拍摄题目自动识别") {
+                FeatureItem(
+                    stringResource(R.string.feature_camera_search),
+                    Icons.Default.CameraAlt,
+                    stringResource(R.string.feature_camera_desc)
+                ) {
                     context.startActivity(Intent(context, CameraSearchActivity::class.java))
                 },
-                FeatureItem("悬浮搜题", Icons.Default.TouchApp, "全局悬浮球快速搜题") {
+                FeatureItem(
+                    stringResource(R.string.feature_float_search),
+                    Icons.Default.TouchApp,
+                    stringResource(R.string.feature_float_desc)
+                ) {
                     if (!FloatWindowService.checkPermission(context)) {
-                        Toast.makeText(context, "请先开启悬浮窗权限", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, R.string.permission_overlay_denied, Toast.LENGTH_LONG).show()
                         context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
                         return@FeatureItem
                     }
@@ -214,13 +223,21 @@ fun MainScreen(
                         showCaptureDialog = true
                     } else {
                         FloatWindowService.start(context)
-                        Toast.makeText(context, "悬浮球已显示", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, R.string.float_ball_showing, Toast.LENGTH_SHORT).show()
                     }
                 },
-                FeatureItem("我的题库", Icons.Default.LibraryBooks, "管理导入的题目") {
+                FeatureItem(
+                    stringResource(R.string.feature_question_bank),
+                    Icons.Default.LibraryBooks,
+                    stringResource(R.string.feature_bank_desc)
+                ) {
                     context.startActivity(Intent(context, QuestionBankActivity::class.java))
                 },
-                FeatureItem("错题本", Icons.Default.Bookmark, "查看错题记录") {
+                FeatureItem(
+                    stringResource(R.string.feature_wrong_book),
+                    Icons.Default.Bookmark,
+                    stringResource(R.string.feature_wrong_desc)
+                ) {
                     val intent = Intent(context, QuestionBankActivity::class.java)
                     intent.putExtra("mode", "wrong")
                     context.startActivity(intent)
@@ -242,10 +259,10 @@ fun MainScreen(
     if (showCaptureDialog) {
         AlertDialog(
             onDismissRequest = { showCaptureDialog = false },
-            title = { Text("选择截图方式") },
+            title = { Text(stringResource(R.string.capture_choice_title)) },
             text = {
                 Column {
-                    Text("悬浮搜题需要截图能力，请选择一种方式：")
+                    Text(stringResource(R.string.capture_choice_desc))
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Card(
@@ -265,8 +282,8 @@ fun MainScreen(
                             Icon(Icons.Default.ScreenShare, contentDescription = null)
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text("录屏搜题", style = MaterialTheme.typography.titleSmall)
-                                Text("兼容性好，支持所有安卓版本", style = MaterialTheme.typography.bodySmall)
+                                Text(stringResource(R.string.capture_media_projection), style = MaterialTheme.typography.titleSmall)
+                                Text(stringResource(R.string.capture_media_projection_desc), style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -276,7 +293,7 @@ fun MainScreen(
                     Card(
                         onClick = {
                             showCaptureDialog = false
-                            Toast.makeText(context, "请开启搜题助手的无障碍服务", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, R.string.capture_accessibility_guide, Toast.LENGTH_LONG).show()
                             context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -291,8 +308,8 @@ fun MainScreen(
                             Icon(Icons.Default.Accessibility, contentDescription = null)
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text("无障碍搜题", style = MaterialTheme.typography.titleSmall)
-                                Text("仅安卓11+，权限更轻量", style = MaterialTheme.typography.bodySmall)
+                                Text(stringResource(R.string.capture_accessibility), style = MaterialTheme.typography.titleSmall)
+                                Text(stringResource(R.string.capture_accessibility_desc), style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -301,7 +318,7 @@ fun MainScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showCaptureDialog = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.cancel))
                 }
             }
         )

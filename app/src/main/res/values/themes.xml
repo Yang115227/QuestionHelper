@@ -1,6 +1,33 @@
 <resources>
-    <style name="Theme.QuestionHelper" parent="android:Theme.Material.Light.NoActionBar">
+    <!-- 应用主题：使用 Material3，与 Compose 主题保持一致 -->
+    <style name="Theme.QuestionHelper" parent="Theme.Material3.Light.NoActionBar">
+        <!-- 主色 -->
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryDark">@color/primary_dark</item>
+        <item name="colorAccent">@color/accent</item>
+
+        <!-- Material3 颜色属性 -->
+        <item name="colorPrimaryContainer">@color/primary</item>
+        <item name="colorOnPrimaryContainer">@android:color/white</item>
+        <item name="colorSecondaryContainer">@color/accent</item>
+        <item name="colorOnSecondaryContainer">@android:color/white</item>
+
+        <!-- 背景与表面 -->
+        <item name="android:colorBackground">@color/background</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorError">@color/error</item>
+
+        <!-- 文字颜色 -->
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+
+        <!-- 状态栏和导航栏 -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+
+        <!-- 禁用默认 ActionBar（使用 Compose 自己的 TopAppBar） -->
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
     </style>
 </resources>

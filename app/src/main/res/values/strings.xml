@@ -1,9 +1,82 @@
 <resources>
+    <!-- 应用基础 -->
     <string name="app_name">搜题助手</string>
+
+    <!-- 主界面 -->
+    <string name="app_title">搜题助手</string>
+    <string name="stat_total">题库总数</string>
+    <string name="stat_wrong">错题数量</string>
+    <string name="feature_list">功能列表</string>
+
+    <!-- 功能卡片 -->
+    <string name="feature_camera_search">拍照搜题</string>
+    <string name="feature_camera_desc">拍摄题目自动识别</string>
+    <string name="feature_float_search">悬浮搜题</string>
+    <string name="feature_float_desc">全局悬浮球快速搜题</string>
+    <string name="feature_question_bank">我的题库</string>
+    <string name="feature_bank_desc">管理导入的题目</string>
+    <string name="feature_wrong_book">错题本</string>
+    <string name="feature_wrong_desc">查看错题记录</string>
+
+    <!-- 权限与提示 -->
+    <string name="permission_overlay_denied">请先开启悬浮窗权限</string>
+    <string name="permission_overlay_required">悬浮搜题需要悬浮窗权限</string>
+    <string name="permission_media_projection_denied">录屏权限被拒绝</string>
+    <string name="permission_media_projection_failed">无法启动录屏授权：%1$s</string>
+    <string name="permission_screen_capture_started">录屏服务已启动</string>
+    <string name="permission_screen_capture_failed">录屏服务启动失败：%1$s</string>
+    <string name="permission_accessibility_required">请前往设置开启无障碍服务</string>
+    <string name="permission_accessibility_guide">需要 Android 11 及以上系统，请前往设置开启无障碍服务</string>
+    <string name="permission_projection_stopped">录屏授权已失效，请重新授权</string>
+
+    <!-- 截图方式选择 -->
+    <string name="capture_choice_title">选择截图方式</string>
+    <string name="capture_choice_desc">悬浮搜题需要截图能力，请选择一种方式：</string>
+    <string name="capture_media_projection">录屏截图</string>
+    <string name="capture_media_projection_desc">需要录屏授权，兼容性好</string>
+    <string name="capture_accessibility">无障碍截图</string>
+    <string name="capture_accessibility_desc">需要 Android 11+，无需额外权限</string>
+    <string name="capture_accessibility_guide">请前往设置开启无障碍服务</string>
+    <string name="cancel">取消</string>
+
+    <!-- 悬浮球 -->
+    <string name="float_ball_showing">悬浮球已显示</string>
+    <string name="float_ball_hidden">悬浮球已隐藏</string>
+
+    <!-- 题库管理 -->
+    <string name="bank_title">我的题库</string>
+    <string name="bank_import">导入题库</string>
+    <string name="bank_empty_primary">暂无导入的题库</string>
+    <string name="bank_empty_secondary">点击右上角 + 导入Excel文件</string>
+    <string name="bank_subject_update">更新时间：%1$s</string>
+    <string name="bank_subject_count">数量：%1$d</string>
+    <string name="bank_delete">删除</string>
+    <string name="bank_delete_confirm_title">确认删除</string>
+    <string name="bank_delete_confirm_message">确定删除「%1$s」吗？共 %2$d 道题，此操作不可恢复。</string>
+
+    <!-- 错题本 -->
+    <string name="wrong_book_title">错题本</string>
+    <string name="wrong_delete_confirm_title">删除题目</string>
+    <string name="wrong_delete_confirm_message">确定彻底删除这道题吗？此操作不可恢复。</string>
+
+    <!-- 通用 -->
+    <string name="back">返回</string>
+    <string name="delete">删除</string>
+    <string name="confirm">确定</string>
+    <string name="searching">搜索中…</string>
+    <string name="no_result">未找到匹配题目</string>
+    <string name="ocr_failed">识别失败</string>
+    <string name="ocr_no_text">未识别到文字</string>
+
+    <!-- 无障碍服务 -->
+    <string name="accessibility_service_desc">搜题助手无障碍服务，用于在任意界面截图识别题目内容</string>
+    <string name="accessibility_service_summary">开启后可使用悬浮球在任意App内截图搜题</string>
+
+    <!-- 设置 -->
+    <string name="settings">设置</string>
     <string name="camera_search">拍照搜题</string>
     <string name="float_search">悬浮搜题</string>
     <string name="question_bank">我的题库</string>
-    <string name="settings">设置</string>
     <string name="take_photo">拍摄题目</string>
     <string name="import_file">导入文件</string>
     <string name="practice">开始练习</string>
@@ -14,7 +87,4 @@
     <string name="search_result">搜索结果</string>
     <string name="answer">答案</string>
     <string name="analysis">解析</string>
-    <string name="no_result">未找到匹配题目</string>
-    <string name="accessibility_service_desc">搜题助手无障碍服务，用于在任意界面截图识别题目内容</string>
-    <string name="accessibility_service_summary">开启后可使用悬浮球在任意App内截图搜题</string>
 </resources>

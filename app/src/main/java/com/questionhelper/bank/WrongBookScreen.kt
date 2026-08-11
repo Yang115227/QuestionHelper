@@ -7,21 +7,22 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.questionhelper.QuestionApp
+import com.questionhelper.R
 import com.questionhelper.data.Question
 import com.questionhelper.data.QuestionRepository
+import com.questionhelper.ui.components.BackTopAppBar
+import com.questionhelper.ui.components.DeleteConfirmDialog
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WrongBookScreen() {
     val context = LocalContext.current
@@ -36,13 +37,9 @@ fun WrongBookScreen() {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("错题本") },
-                navigationIcon = {
-                    IconButton(onClick = { (context as? ComponentActivity)?.finish() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
-                    }
-                }
+            BackTopAppBar(
+                title = stringResource(R.string.wrong_book_title),
+                onBack = { (context as? ComponentActivity)?.finish() }
             )
         }
     ) { padding ->
@@ -75,7 +72,7 @@ fun WrongBookScreen() {
                         IconButton(onClick = { showDeleteDialog = q }) {
                             Icon(
                                 Icons.Default.Delete,
-                                contentDescription = "删除",
+                                contentDescription = stringResource(R.string.delete),
                                 tint = MaterialTheme.colorScheme.error
                             )
                         }
@@ -86,24 +83,14 @@ fun WrongBookScreen() {
     }
 
     showDeleteDialog?.let { q ->
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = null },
-            title = { Text("删除题目") },
-            text = { Text("确定彻底删除这道题吗？此操作不可恢复。") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            repo.deleteQuestionById(q.id)
-                        }
-                        showDeleteDialog = null
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) { Text("删除") }
+        DeleteConfirmDialog(
+            title = stringResource(R.string.wrong_delete_confirm_title),
+            message = stringResource(R.string.wrong_delete_confirm_message),
+            onConfirm = {
+                scope.launch { repo.deleteQuestionById(q.id) }
+                showDeleteDialog = null
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = null }) { Text("取消") }
-            }
+            onDismiss = { showDeleteDialog = null }
         )
     }
 }

@@ -4,28 +4,30 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.questionhelper.QuestionApp
+import com.questionhelper.R
 import com.questionhelper.data.Question
 import com.questionhelper.data.QuestionRepository
+import com.questionhelper.ui.components.BackTopAppBar
+import com.questionhelper.ui.components.DeleteConfirmDialog
+import com.questionhelper.ui.components.DeleteButton
+import com.questionhelper.ui.components.EmptyStateMessage
 import com.questionhelper.ui.theme.QuestionHelperTheme
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -54,13 +56,12 @@ class QuestionBankActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuestionManageScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val repo = remember { QuestionRepository(QuestionApp.database.questionDao()) }
-    
+
     var subjectGroups by remember { mutableStateOf<List<SubjectGroup>>(emptyList()) }
     var showDeleteDialog by remember { mutableStateOf<SubjectGroup?>(null) }
 
@@ -79,22 +80,17 @@ fun QuestionManageScreen() {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("我的题库", fontSize = 18.sp, fontWeight = FontWeight.Medium) },
-                navigationIcon = {
-                    IconButton(onClick = { (context as? ComponentActivity)?.finish() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
-                    }
-                },
+            BackTopAppBar(
+                title = stringResource(R.string.bank_title),
+                onBack = { (context as? ComponentActivity)?.finish() },
                 actions = {
                     // 导入入口
                     IconButton(onClick = {
                         context.startActivity(Intent(context, ImportActivity::class.java))
                     }) {
-                        Icon(Icons.Default.Add, contentDescription = "导入题库")
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.bank_import))
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                }
             )
         }
     ) { padding ->
@@ -118,41 +114,31 @@ fun QuestionManageScreen() {
                         showDeleteDialog = group
                     }
                 )
-                Divider(color = Color(0xFFEEEEEE), thickness = 0.5.dp)
+                Divider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             }
         }
 
         if (subjectGroups.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("暂无导入的题库", color = Color(0xFF999999), fontSize = 15.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("点击右上角 + 导入Excel文件", color = Color(0xFFBBBBBB), fontSize = 13.sp)
-                }
-            }
+            EmptyStateMessage(
+                primaryText = stringResource(R.string.bank_empty_primary),
+                secondaryText = stringResource(R.string.bank_empty_secondary),
+                modifier = Modifier.padding(padding)
+            )
         }
     }
 
     // 删除确认
     showDeleteDialog?.let { group ->
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = null },
-            title = { Text("确认删除") },
-            text = { Text("确定删除「${group.subject}」吗？共 ${group.count} 道题，此操作不可恢复。") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            repo.deleteQuestionsBySubject(group.subject)
-                        }
-                        showDeleteDialog = null
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFF44336))
-                ) { Text("删除") }
+        DeleteConfirmDialog(
+            title = stringResource(R.string.bank_delete_confirm_title),
+            message = stringResource(R.string.bank_delete_confirm_message, group.subject, group.count),
+            onConfirm = {
+                scope.launch {
+                    repo.deleteQuestionsBySubject(group.subject)
+                }
+                showDeleteDialog = null
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = null }) { Text("取消") }
-            }
+            onDismiss = { showDeleteDialog = null }
         )
     }
 }
@@ -176,13 +162,13 @@ fun SubjectManageItem(
                 text = group.subject,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF212121)
+                color = MaterialTheme.colorScheme.onSurface
             )
             if (group.typeLabel.isNotEmpty()) {
                 Text(
                     text = group.typeLabel,
                     fontSize = 14.sp,
-                    color = Color(0xFF757575),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 2.dp)
                 )
             }
@@ -191,13 +177,13 @@ fun SubjectManageItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "更新时间：${formatDate(group.updateTime)}",
+                    text = stringResource(R.string.bank_subject_update, formatDate(group.updateTime)),
                     fontSize = 13.sp,
                     color = Color(0xFF999999)
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
-                    text = "数量：${group.count}",
+                    text = stringResource(R.string.bank_subject_count, group.count),
                     fontSize = 13.sp,
                     color = Color(0xFF999999)
                 )
@@ -205,19 +191,10 @@ fun SubjectManageItem(
         }
 
         // 删除按钮
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .background(Color(0xFFCCCCCC))
-                .clickable(onClick = onDelete)
-                .padding(horizontal = 18.dp, vertical = 8.dp)
-        ) {
-            Text(
-                text = "删除",
-                fontSize = 14.sp,
-                color = Color.White
-            )
-        }
+        DeleteButton(
+            text = stringResource(R.string.bank_delete),
+            onClick = onDelete
+        )
     }
 }
 
@@ -234,4 +211,3 @@ private fun detectType(questions: List<Question>): String {
 private fun formatDate(time: Long): String {
     return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(time))
 }
-

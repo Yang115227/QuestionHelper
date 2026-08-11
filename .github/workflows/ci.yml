@@ -5,6 +5,16 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: '构建类型'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
 
 jobs:
   build:
@@ -35,11 +45,34 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build with Gradle
+      # Debug 构建（默认，无需签名）
+      - name: Build Debug APK
+        if: github.event.inputs.build_type != 'release'
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Upload Debug APK
+        if: github.event.inputs.build_type != 'release'
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/*.apk
+
+      # Release 构建（需要签名，仅手动触发）
+      - name: Build Release APK
+        if: github.event.inputs.build_type == 'release'
+        env:
+          STORE_FILE: ${{ secrets.SIGNING_STORE_FILE }}
+          STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          # 将 base64 编码的签名文件解码
+          echo "$STORE_FILE" | base64 -d > app/release.jks
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Upload Release APK
+        if: github.event.inputs.build_type == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: app/build/outputs/apk/release/*.apk

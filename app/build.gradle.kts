@@ -28,10 +28,24 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("release.jks")
-            storePassword = System.getenv("STORE_PASSWORD") ?: "questionhelper"
-            keyAlias = System.getenv("KEY_ALIAS") ?: "questionhelper"
-            keyPassword = System.getenv("KEY_PASSWORD") ?: "questionhelper"
+            // 优先从环境变量读取（CI 构建）
+            // 本地构建时如果没有设置环境变量，使用 debug 签名（避免硬编码密码）
+            val storeFilePath = System.getenv("STORE_FILE") ?: ""
+            val storePw = System.getenv("STORE_PASSWORD")
+            val keyAliasName = System.getenv("KEY_ALIAS")
+            val keyPw = System.getenv("KEY_PASSWORD")
+
+            if (storeFilePath.isNotEmpty() && storePw != null && keyAliasName != null && keyPw != null) {
+                storeFile = file(storeFilePath)
+                storePassword = storePw
+                keyAlias = keyAliasName
+                keyPassword = keyPw
+            } else {
+                // 本地开发或 CI 没有配置签名时，使用 debug 签名
+                // 这样不会生成"正式签名"的 release 包，避免密钥泄露
+                println("Warning: Release signing config not fully set, falling back to debug signing")
+                // 不设置 storeFile 等属性，Gradle 会自动使用 debug 签名
+            }
         }
     }
 
@@ -43,7 +57,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (signingConfigs.getByName("release").storeFile != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
         debug {
             // Use default debug keystore
@@ -93,6 +111,9 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation)
     implementation(libs.coroutines.android)
+
+    // Android Material Components（XML Theme.Material3 需要）
+    implementation("com.google.android.material:material:1.12.0")
 
     // CameraX
     implementation(libs.camera.core)
