@@ -1,8 +1,10 @@
 package com.questionhelper
 
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.os.Handler
@@ -62,6 +64,21 @@ class MainActivity : ComponentActivity() {
                 Toast.makeText(this, "录屏权限被拒绝", Toast.LENGTH_SHORT).show()
             }
         }
+
+        // 监听录屏权限被撤销的事件
+        ContextCompat.registerReceiver(
+            this,
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    if (intent?.action == ScreenCaptureService.ACTION_PROJECTION_STOPPED) {
+                        ScreenCaptureService.isInitialized = false
+                        Toast.makeText(this@MainActivity, "录屏授权已失效，请重新授权", Toast.LENGTH_LONG).show()
+                    }
+                }
+            },
+            IntentFilter(ScreenCaptureService.ACTION_PROJECTION_STOPPED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         val showCaptureChoice = intent.getBooleanExtra("show_capture_choice", false)
         setContent {

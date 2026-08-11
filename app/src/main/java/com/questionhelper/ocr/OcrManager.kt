@@ -7,26 +7,47 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class OcrManager(context: Context) {
-    private val predictor: OCRPredictor
+    private var predictor: OCRPredictor? = null
     private val tag = "OcrManager"
+    val isReady: Boolean
+        get() = predictor != null
 
     init {
-        val assetPath = "paddleocr"
-        predictor = OCRPredictor(context, assetPath)
-        Log.d(tag, "OCR initialized with PaddleOCR")
+        try {
+            val assetPath = "paddleocr"
+            predictor = OCRPredictor(context, assetPath)
+            Log.d(tag, "OCR initialized with PaddleOCR")
+        } catch (e: Exception) {
+            Log.e(tag, "OCR Predictor init failed, will fallback to ML Kit", e)
+            predictor = null
+        }
     }
 
+    /**
+     * 识别图片中的文字
+     * @return 识别结果文本，失败返回空字符串
+     */
     suspend fun recognizeFromBitmap(bitmap: Bitmap): String = withContext(Dispatchers.Default) {
+        if (predictor == null) {
+            Log.w(tag, "PaddleOCR not available, skipping")
+            return@withContext ""
+        }
         try {
-            val results = predictor.runOcr(bitmap)
+            val results = predictor!!.runOcr(bitmap)
             results.joinToString("\n") { it.text }
         } catch (e: Exception) {
-            Log.e(tag, "OCR failed", e)
+            Log.e(tag, "OCR recognition failed", e)
             ""
         }
     }
 
     fun close() {
-        predictor.release()
+        try {
+            predictor?.release()
+        } catch (e: Exception) {
+            Log.e(tag, "Release failed", e)
+        } finally {
+            predictor = null
+        }
     }
 }

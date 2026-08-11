@@ -93,7 +93,7 @@ dependencies {
     implementation(libs.camera.lifecycle)
     implementation(libs.camera.view)
 
-    // ML Kit
+    // ML Kit (主 OCR 方案，无需额外模型文件)
     implementation(libs.mlkit.text)
     implementation(libs.mlkit.text.chinese)
 
@@ -102,12 +102,14 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
-    // POI (for Excel/Word parsing)
+    // POI (Excel 解析)
     implementation(libs.poi)
     implementation(libs.poi.ooxml)
 
-    // Paddle Lite OCR
-    implementation(files("libs/PaddlePredictor.jar"))
+    // Paddle Lite OCR —— 本地 JAR，可选依赖
+    // 如果你把 PaddlePredictor.jar 放到了 app/libs/ 目录，取消下面这行的注释：
+    // implementation(files("libs/PaddlePredictor.jar"))
+    // 同时需要把 PaddleLiteManager.java 移入源码目录（见修复 1）
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
