@@ -43,12 +43,12 @@ import java.util.concurrent.Executors
 
 class CameraSearchActivity : ComponentActivity() {
     private lateinit var cameraExecutor: ExecutorService
-    private lateinit var ocrManager: OcrManager
+    private var ocrManager: OcrManager? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cameraExecutor = Executors.newSingleThreadExecutor()
-        ocrManager = OcrManager(this)
+        initOcrManager()
 
         val permissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestPermission()
@@ -83,10 +83,25 @@ class CameraSearchActivity : ComponentActivity() {
         }
     }
 
+    private fun initOcrManager() {
+        try {
+            ocrManager = OcrManager(this)
+            Log.d("CameraSearch", "OCR initialized")
+        } catch (e: Exception) {
+            Log.e("CameraSearch", "OCR init failed", e)
+            Toast.makeText(this, "OCR 模型加载失败：${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun processImage(bitmap: Bitmap) {
+        val manager = ocrManager
+        if (manager == null) {
+            Toast.makeText(this, "OCR 未初始化，无法识别", Toast.LENGTH_SHORT).show()
+            return
+        }
         lifecycleScope.launch {
             try {
-                val text = ocrManager.recognizeFromBitmap(bitmap)
+                val text = manager.recognizeFromBitmap(bitmap)
                 if (text.isNotEmpty()) {
                     val repo = QuestionRepository(QuestionApp.database.questionDao())
                     val question = repo.searchQuestion(text.take(50))
@@ -120,7 +135,7 @@ class CameraSearchActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         cameraExecutor.shutdown()
-        ocrManager.close()
+        ocrManager?.close()
     }
 }
 
@@ -219,22 +234,44 @@ fun CameraSearchScreen(
 }
 
 private fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
-    val buffer = image.planes[0].buffer
-    val bytes = ByteArray(buffer.remaining())
-    buffer.get(bytes)
     return try {
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        when (image.format) {
+            ImageFormat.JPEG, ImageFormat.RGB_565 -> {
+                val buffer = image.planes[0].buffer
+                val bytes = ByteArray(buffer.remaining())
+                buffer.get(bytes)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }
+            else -> yuv420888ToBitmap(image)
+        }
     } catch (e: Exception) {
-        // Fallback for YUV format
-        val yuvImage = YuvImage(
-            bytes,
-            ImageFormat.NV21,
-            image.width,
-            image.height,
-            null
-        )
-        val out = ByteArrayOutputStream()
-        yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 100, out)
-        BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size())
+        Log.e("Camera", "Convert ImageProxy to Bitmap failed", e)
+        null
     }
+}
+
+private fun yuv420888ToBitmap(image: ImageProxy): Bitmap? {
+    val yBuffer = image.planes[0].buffer
+    val uBuffer = image.planes[1].buffer
+    val vBuffer = image.planes[2].buffer
+
+    val ySize = yBuffer.remaining()
+    val uSize = uBuffer.remaining()
+    val vSize = vBuffer.remaining()
+
+    val nv21 = ByteArray(ySize + uSize + vSize)
+    yBuffer.get(nv21, 0, ySize)
+    vBuffer.get(nv21, ySize, vSize)
+    uBuffer.get(nv21, ySize + vSize, uSize)
+
+    val yuvImage = YuvImage(
+        nv21,
+        ImageFormat.NV21,
+        image.width,
+        image.height,
+        null
+    )
+    val out = ByteArrayOutputStream()
+    yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 100, out)
+    return BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size())
 }

@@ -175,6 +175,15 @@ class AccessibilitySearchService : AccessibilityService() {
         }
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "CAPTURE") {
+            val rect = intent.getParcelableExtra<Rect>("rect")
+            Log.d(TAG, "CAPTURE intent received, rect=$rect")
+            rect?.let { captureWithAccessibility(it) }
+        }
+        return START_STICKY
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
 

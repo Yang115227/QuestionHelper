@@ -113,6 +113,7 @@ class ScreenCaptureService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand action=${intent?.action}, isInitialized=$isInitialized")
         if (!isInitialized) {
             if (intent == null) {
                 isRunning = false
@@ -148,7 +149,7 @@ class ScreenCaptureService : Service() {
             rect?.let { captureArea(it) }
         }
 
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun createNotificationChannel() {
@@ -301,6 +302,7 @@ class ScreenCaptureService : Service() {
     }
 
     private fun processBitmap(bitmap: Bitmap) {
+        Log.d(TAG, "processBitmap start, initializing OCR...")
         val manager = ensureOcrManager()
         if (manager == null) {
             handler.post { Toast.makeText(this, "OCR 未初始化，无法识别", Toast.LENGTH_SHORT).show() }
