@@ -137,7 +137,13 @@ class AccessibilitySearchService : AccessibilityService() {
             method.invoke(this, Display.DEFAULT_DISPLAY, executor, proxy)
         } catch (e: Exception) {
             Log.e(TAG, "takeScreenshot failed", e)
-            handler.post { Toast.makeText(this@AccessibilitySearchService, "截图失败", Toast.LENGTH_SHORT).show() }
+            handler.post {
+                val msg = when {
+                    Build.VERSION.SDK_INT < Build.VERSION_CODES.R -> "需要 Android 11 及以上系统"
+                    else -> "截图失败，请检查无障碍权限是否被系统限制"
+                }
+                Toast.makeText(this@AccessibilitySearchService, msg, Toast.LENGTH_LONG).show()
+            }
         }
     }
 

@@ -15,4 +15,6 @@
     <string name="answer">答案</string>
     <string name="analysis">解析</string>
     <string name="no_result">未找到匹配题目</string>
+    <string name="accessibility_service_desc">搜题助手无障碍服务，用于在任意界面截图识别题目内容</string>
+    <string name="accessibility_service_summary">开启后可使用悬浮球在任意App内截图搜题</string>
 </resources>

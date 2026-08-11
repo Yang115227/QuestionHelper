@@ -103,15 +103,34 @@ dependencies {
     // ML Kit (主 OCR 方案，无需额外模型文件)
     implementation(libs.mlkit.text)
     implementation(libs.mlkit.text.chinese)
+    // 强制统一内部依赖版本，避免 Google Play 服务内部模型下载冲突
+    constraints {
+        implementation("com.google.android.gms:play-services-mlkit-text-recognition-common:19.0.0") {
+            because("统一 ML Kit 内部公共库版本，避免中文识别包与主包冲突")
+        }
+    }
 
     // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
-    // POI (Excel 解析)
-    implementation(libs.poi)
-    implementation(libs.poi.ooxml)
+    // POI (Excel 解析) —— 排除 Android 不兼容的依赖
+    implementation(libs.poi) {
+        exclude(group = "org.apache.xmlbeans", module = "xmlbeans")
+        exclude(group = "commons-codec", module = "commons-codec")
+    }
+    implementation(libs.poi.ooxml) {
+        exclude(group = "org.apache.xmlbeans", module = "xmlbeans")
+        exclude(group = "org.apache.commons", module = "commons-compress")
+        exclude(group = "com.github.virtuald", module = "curvesapi")
+    }
+    // Android 兼容的 XMLBeans 替代（poi 需要它解析 xlsx）
+    implementation("org.apache.xmlbeans:xmlbeans:5.1.1") {
+        exclude(group = "org.apache.logging.log4j")
+    }
+    // Android 上缺失的 stax-api 替代
+    implementation("javax.xml.stream:stax-api:1.0-2")
 
     // Paddle Lite OCR —— 本地 JAR，可选依赖
     // CI 会下载并放入 app/libs/；本地如果没有该文件，则使用 stub 类编译并降级到 ML Kit

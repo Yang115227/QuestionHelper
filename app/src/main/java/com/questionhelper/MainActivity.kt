@@ -1,5 +1,6 @@
 package com.questionhelper
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -11,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
+import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -107,12 +109,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val expectedComponent = ComponentName(this, AccessibilitySearchService::class.java)
-        val enabledServices = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: return false
-        return enabledServices.contains(expectedComponent.flattenToString())
+        return isAccessibilityEnabled(this)
     }
 
     private fun requestMediaProjection() {
@@ -352,14 +349,31 @@ fun FeatureCard(feature: FeatureItem) {
     }
 }
 
-private fun isAccessibilityEnabled(context: Context): Boolean {
+/**
+ * 统一的无障碍服务检测工具函数
+ * 通过 AccessibilityManager 获取已安装并启用的服务列表，进行精确匹配
+ */
+fun isAccessibilityEnabled(context: Context): Boolean {
     return try {
-        val enabledServices = Settings.Secure.getString(
-            context.contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        val enabledServices = am.getEnabledAccessibilityServiceList(
+            AccessibilityServiceInfo.FEEDBACK_ALL_MASK
         ) ?: return false
-        enabledServices.contains("com.questionhelper/.search.AccessibilitySearchService")
+
+        val expectedComponent = ComponentName(
+            context.packageName,
+            "com.questionhelper.search.AccessibilitySearchService"
+        )
+
+        enabledServices.any { serviceInfo ->
+            val resolvedInfo = serviceInfo.resolveInfo?.serviceInfo
+            resolvedInfo?.let {
+                ComponentName(it.packageName, it.name) == expectedComponent
+            } ?: false
+        }
     } catch (e: Exception) {
+        Log.e("AccessibilityCheck", "Check failed", e)
         false
     }
 }
+

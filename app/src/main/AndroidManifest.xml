@@ -65,7 +65,12 @@
         <service
             android:name=".search.FloatWindowService"
             android:foregroundServiceType="specialUse"
-            android:exported="false" />
+            android:exported="false">
+            <!-- Android 14+ 要求：声明 specialUse 的具体子类型 -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="float_window_for_ocr_search" />
+        </service>
 
     </application>
 </manifest>

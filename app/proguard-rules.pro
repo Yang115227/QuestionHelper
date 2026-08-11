@@ -25,3 +25,16 @@
 -keep class * extends androidx.room.RoomDatabase
 -keep @androidx.room.Entity class *
 -dontwarn androidx.room.paging.**
+
+# Apache POI
+-keep class org.apache.poi.** { *; }
+-keep class org.apache.xmlbeans.** { *; }
+-keep class org.openxmlformats.** { *; }
+-dontwarn org.apache.poi.**
+-dontwarn org.apache.xmlbeans.**
+-dontwarn org.openxmlformats.**
+-dontwarn com.microsoft.schemas.**
+-dontwarn org.apache.commons.compress.**
+-dontwarn javax.imageio.**
+-dontwarn java.awt.**
+-dontwarn org.apache.harmony.**
