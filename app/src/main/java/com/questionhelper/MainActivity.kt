@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
             object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, intent: Intent?) {
                     if (intent?.action == ScreenCaptureService.ACTION_PROJECTION_STOPPED) {
-                        ScreenCaptureService.isInitialized = false
+                        ScreenCaptureService.markProjectionStopped()
                         Toast.makeText(this@MainActivity, "录屏授权已失效，请重新授权", Toast.LENGTH_LONG).show()
                     }
                 }

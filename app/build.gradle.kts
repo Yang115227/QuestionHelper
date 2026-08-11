@@ -65,6 +65,13 @@ android {
         noCompress += listOf("tflite", "lite", "nb", "txt")
     }
 
+    sourceSets["main"].java {
+        // 没有真实 PaddlePredictor.jar 时，使用 stub 类参与编译，保证项目可构建
+        if (!file("libs/PaddlePredictor.jar").exists()) {
+            srcDir("src/stub/java")
+        }
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -107,9 +114,11 @@ dependencies {
     implementation(libs.poi.ooxml)
 
     // Paddle Lite OCR —— 本地 JAR，可选依赖
-    // 如果你把 PaddlePredictor.jar 放到了 app/libs/ 目录，取消下面这行的注释：
-    // implementation(files("libs/PaddlePredictor.jar"))
-    // 同时需要把 PaddleLiteManager.java 移入源码目录（见修复 1）
+    // CI 会下载并放入 app/libs/；本地如果没有该文件，则使用 stub 类编译并降级到 ML Kit
+    val paddleJar = file("libs/PaddlePredictor.jar")
+    if (paddleJar.exists()) {
+        implementation(files(paddleJar))
+    }
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

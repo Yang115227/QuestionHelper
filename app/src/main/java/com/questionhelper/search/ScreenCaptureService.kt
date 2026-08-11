@@ -40,6 +40,13 @@ class ScreenCaptureService : Service() {
         const val ACTION_PROJECTION_STOPPED = "com.questionhelper.action.PROJECTION_STOPPED"
 
         /**
+         * 供外部（如 MainActivity 广播接收器）标记授权已失效
+         */
+        fun markProjectionStopped() {
+            isInitialized = false
+        }
+
+        /**
          * 启动服务（带参数）
          */
         fun start(context: Context, resultCode: Int, data: Intent) {
