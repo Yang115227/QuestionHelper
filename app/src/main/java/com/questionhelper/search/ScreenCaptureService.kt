@@ -46,6 +46,7 @@ class ScreenCaptureService : Service() {
         const val ACTION_CAPTURE = "com.questionhelper.action.CAPTURE"
         const val ACTION_PROJECTION_STOPPED = "com.questionhelper.action.PROJECTION_STOPPED"
         const val ACTION_PROJECTION_READY = "com.questionhelper.action.PROJECTION_READY"
+        const val EXTRA_ERROR = "error"
 
         @Volatile
         var isRunning = false
@@ -55,11 +56,20 @@ class ScreenCaptureService : Service() {
         var isInitialized = false
             private set
 
+        @Volatile
+        var isInitializing = false
+            private set
+
+        @Volatile
+        var lastError: String? = null
+            private set
+
         /**
          * 供外部（如 MainActivity 广播接收器）标记授权已失效
          */
         fun markProjectionStopped() {
             isInitialized = false
+            isInitializing = false
         }
 
         /**
@@ -135,23 +145,41 @@ class ScreenCaptureService : Service() {
 
         if (resultCode == -1 || data == null) {
             Log.e(tag, "Invalid MediaProjection data")
+            reportInitFailed(getString(R.string.screen_capture_invalid_data))
             stopSelf()
             return START_NOT_STICKY
         }
 
         // 如果已经初始化，先释放旧的
         releaseProjection()
+        isInitializing = true
+        lastError = null
 
         if (!initializeProjection(resultCode, data)) {
-            Log.e(tag, "MediaProjection initialization failed")
+            val error = lastError ?: getString(R.string.screen_capture_init_failed)
+            Log.e(tag, "MediaProjection initialization failed: $error")
+            reportInitFailed(error)
             stopSelf()
             return START_NOT_STICKY
         }
 
         isRunning = true
         isInitialized = true
+        isInitializing = false
+        lastError = null
         sendBroadcast(Intent(ACTION_PROJECTION_READY))
         return START_STICKY
+    }
+
+    private fun reportInitFailed(error: String) {
+        isInitializing = false
+        lastError = error
+        handler.post {
+            Toast.makeText(this, getString(R.string.screen_capture_init_failed_with_reason, error), Toast.LENGTH_LONG).show()
+        }
+        sendBroadcast(Intent(ACTION_PROJECTION_STOPPED).apply {
+            putExtra(EXTRA_ERROR, error)
+        })
     }
 
     /**
@@ -164,6 +192,7 @@ class ScreenCaptureService : Service() {
 
             if (mediaProjection == null) {
                 Log.e(tag, "getMediaProjection returned null")
+                lastError = getString(R.string.screen_capture_projection_null)
                 return false
             }
 
@@ -172,6 +201,7 @@ class ScreenCaptureService : Service() {
                 override fun onStop() {
                     Log.w(tag, "MediaProjection stopped by system")
                     isInitialized = false
+                    isInitializing = false
                     releaseProjection()
                     // 通知 MainActivity 重新申请权限
                     sendBroadcast(Intent(ACTION_PROJECTION_STOPPED))
@@ -180,16 +210,25 @@ class ScreenCaptureService : Service() {
 
             // 创建 ImageReader（使用真实屏幕尺寸）
             imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2)
+            if (imageReader == null) {
+                lastError = getString(R.string.screen_capture_image_reader_null)
+                return false
+            }
             virtualDisplay = mediaProjection?.createVirtualDisplay(
                 "ScreenCapture",
                 screenWidth, screenHeight, screenDensity,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 imageReader?.surface, null, handler
             )
+            if (virtualDisplay == null) {
+                lastError = getString(R.string.screen_capture_virtual_display_null)
+                return false
+            }
 
             true
         } catch (e: Exception) {
             Log.e(tag, "Initialize projection failed", e)
+            lastError = getString(R.string.screen_capture_init_exception, e.message)
             false
         }
     }
@@ -360,12 +399,14 @@ class ScreenCaptureService : Service() {
         mediaProjection = null
 
         isInitialized = false
+        isInitializing = false
     }
 
     override fun onDestroy() {
         super.onDestroy()
         releaseProjection()
         isRunning = false
+        isInitializing = false
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -376,14 +417,14 @@ class ScreenCaptureService : Service() {
         val channelId = "screen_capture"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                channelId, "录屏服务",
+                channelId, getString(R.string.screen_capture_channel_name),
                 NotificationManager.IMPORTANCE_LOW
             )
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
         val notification: Notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("搜题助手")
-            .setContentText("录屏截图服务运行中")
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.screen_capture_service_running))
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)
             .build()

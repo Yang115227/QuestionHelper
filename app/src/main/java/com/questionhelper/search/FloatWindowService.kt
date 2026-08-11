@@ -80,9 +80,13 @@ class FloatWindowService : Service() {
                     waitingScreenCapture = false
                 }
                 ScreenCaptureService.ACTION_PROJECTION_STOPPED -> {
-                    Log.d(TAG, "Screen capture service stopped")
+                    val error = intent.getStringExtra(ScreenCaptureService.EXTRA_ERROR)
+                    Log.d(TAG, "Screen capture service stopped: $error")
                     waitingScreenCapture = false
                     ScreenCaptureService.markProjectionStopped()
+                    if (!error.isNullOrEmpty()) {
+                        handler.post { Toast.makeText(context, error, Toast.LENGTH_LONG).show() }
+                    }
                 }
             }
         }
@@ -184,30 +188,38 @@ class FloatWindowService : Service() {
         }
 
         val hasScreenCapture = ScreenCaptureService.isRunning
-        val hasScreenCaptureReady = ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized
+        val isScreenCaptureInitializing = ScreenCaptureService.isInitializing
         val hasAccessibility = isAccessibilityServiceEnabled()
 
-        // 如果正在等待录屏初始化且未启用无障碍，提示用户稍后再试，避免重复弹选择框
-        if (waitingScreenCapture && !hasScreenCaptureReady && !hasAccessibility) {
-            Toast.makeText(this, R.string.screenshot_service_initializing, Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        if (!hasScreenCapture && !hasAccessibility) {
-            Toast.makeText(this, R.string.float_select_capture_method, Toast.LENGTH_SHORT).show()
-            val intent = Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                putExtra("show_capture_choice", true)
+        when {
+            // 录屏服务正在初始化中，提示稍后再试
+            isScreenCaptureInitializing && !hasAccessibility -> {
+                Toast.makeText(this, R.string.screenshot_service_initializing, Toast.LENGTH_SHORT).show()
+                return
             }
-            startActivity(intent)
-            // 标记正在等待用户授权并初始化录屏
-            waitingScreenCapture = true
-            return
-        }
-
-        if (hasScreenCapture && !ScreenCaptureService.isInitialized) {
-            Toast.makeText(this, R.string.screenshot_service_initializing, Toast.LENGTH_SHORT).show()
-            return
+            // 录屏服务启动中但尚未就绪，可能是用户点击太快，延迟重试
+            hasScreenCapture && !ScreenCaptureService.isInitialized -> {
+                Toast.makeText(this, R.string.screenshot_service_initializing, Toast.LENGTH_SHORT).show()
+                handler.postDelayed({
+                    if (ScreenCaptureService.isInitialized) {
+                        showCropView()
+                    } else {
+                        onFloatBallClick()
+                    }
+                }, 800)
+                return
+            }
+            // 没有任何截图能力，提示选择方式
+            !hasScreenCapture && !hasAccessibility -> {
+                Toast.makeText(this, R.string.float_select_capture_method, Toast.LENGTH_SHORT).show()
+                val intent = Intent(this, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtra("show_capture_choice", true)
+                }
+                startActivity(intent)
+                waitingScreenCapture = true
+                return
+            }
         }
 
         showCropView()

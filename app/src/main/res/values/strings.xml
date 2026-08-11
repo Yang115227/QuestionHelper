@@ -46,9 +46,21 @@
     <string name="screenshot_failed_null">截图返回为空，请检查无障碍权限</string>
     <string name="screenshot_failed_error_code">截图失败，错误码：%1$s</string>
     <string name="screenshot_failed_restricted">截图失败，请检查无障碍权限是否被系统限制</string>
+    <string name="screenshot_reflection_failed">截图结果解析失败：%1$s</string>
     <string name="screenshot_service_initializing">录屏服务正在初始化，请稍后再试</string>
     <string name="screenshot_service_not_ready">录屏服务尚未就绪，请重新授权</string>
     <string name="screenshot_failed_with_reason">截图失败：%1$s</string>
+
+    <!-- 录屏服务 -->
+    <string name="screen_capture_channel_name">录屏服务</string>
+    <string name="screen_capture_service_running">录屏截图服务运行中</string>
+    <string name="screen_capture_invalid_data">录屏授权数据无效</string>
+    <string name="screen_capture_init_failed">录屏服务初始化失败</string>
+    <string name="screen_capture_init_failed_with_reason">录屏服务初始化失败：%1$s</string>
+    <string name="screen_capture_projection_null">无法获取屏幕录制投影</string>
+    <string name="screen_capture_image_reader_null">无法创建图像读取器</string>
+    <string name="screen_capture_virtual_display_null">无法创建虚拟显示</string>
+    <string name="screen_capture_init_exception">初始化异常：%1$s</string>
 
     <!-- 截图方式选择 -->
     <string name="capture_choice_title">选择截图方式</string>

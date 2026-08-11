@@ -136,7 +136,7 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
-    // POI (Excel 解析) —— 排除 Android 不兼容的依赖
+    // POI (Excel 解析) —— 排除 Android 不兼容/重复的依赖
     implementation(libs.poi) {
         exclude(group = "org.apache.xmlbeans", module = "xmlbeans")
         exclude(group = "commons-codec", module = "commons-codec")
@@ -145,6 +145,11 @@ dependencies {
         exclude(group = "org.apache.xmlbeans", module = "xmlbeans")
         exclude(group = "org.apache.commons", module = "commons-compress")
         exclude(group = "com.github.virtuald", module = "curvesapi")
+    }
+    // poi-ooxml 解析 xlsx 需要 commons-compress（ZipArchiveInputStream）
+    implementation("org.apache.commons:commons-compress:1.26.0") {
+        exclude(group = "org.apache.commons", module = "commons-lang3")
+        exclude(group = "commons-io", module = "commons-io")
     }
     // Android 兼容的 XMLBeans 替代（poi 需要它解析 xlsx）
     implementation("org.apache.xmlbeans:xmlbeans:5.1.1") {

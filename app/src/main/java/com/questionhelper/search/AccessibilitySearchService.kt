@@ -133,25 +133,28 @@ class AccessibilitySearchService : AccessibilityService() {
                 if (proxyMethod.name == "onSuccess") {
                     val result = args?.getOrNull(0)
                     try {
-                        val bitmap = result?.let {
-                            try {
-                                val getBitmap = it.javaClass.getMethod("getBitmap")
-                                getBitmap.invoke(it) as? Bitmap
-                            } catch (e: Throwable) {
-                                Log.e(TAG, "getBitmap failed", e)
-                                null
+                        val (bitmap, reflectionError) = extractBitmap(result)
+                        when {
+                            bitmap != null -> processScreenshotBitmap(bitmap, rect)
+                            reflectionError != null -> {
+                                Log.e(TAG, "Screenshot reflection failed: $reflectionError")
+                                handler.post {
+                                    Toast.makeText(
+                                        this@AccessibilitySearchService,
+                                        getString(R.string.screenshot_reflection_failed, reflectionError),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
                             }
-                        }
-                        if (bitmap != null) {
-                            processScreenshotBitmap(bitmap, rect)
-                        } else {
-                            Log.e(TAG, "Screenshot returned null bitmap")
-                            handler.post {
-                                Toast.makeText(
-                                    this@AccessibilitySearchService,
-                                    R.string.screenshot_failed_null,
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                            else -> {
+                                Log.e(TAG, "Screenshot returned null bitmap")
+                                handler.post {
+                                    Toast.makeText(
+                                        this@AccessibilitySearchService,
+                                        R.string.screenshot_failed_null,
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             }
                         }
                     } catch (e: Throwable) {
@@ -208,6 +211,29 @@ class AccessibilitySearchService : AccessibilityService() {
             // API 30-33 没有 release() 方法，依赖 GC 回收
         } catch (e: Throwable) {
             Log.w(TAG, "release screenshot result failed", e)
+        }
+    }
+
+    /**
+     * 通过反射从 ScreenshotResult 中提取 Bitmap。
+     * 返回 Pair<Bitmap?, String?>：成功返回 Bitmap，反射失败返回错误信息，真正 null 则两者皆为 null。
+     */
+    private fun extractBitmap(result: Any?): Pair<Bitmap?, String?> {
+        if (result == null) return null to null
+        return try {
+            val getBitmap = try {
+                result.javaClass.getMethod("getBitmap")
+            } catch (e: Throwable) {
+                return null to "getBitmap 方法不存在: ${e.message}"
+            }
+            val bitmap = try {
+                getBitmap.invoke(result) as? Bitmap
+            } catch (e: Throwable) {
+                return null to "getBitmap 调用失败: ${e.message}"
+            }
+            bitmap to null
+        } catch (e: Throwable) {
+            null to "解析截图结果异常: ${e.message}"
         }
     }
 
