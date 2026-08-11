@@ -28,6 +28,27 @@
     <string name="permission_accessibility_required">请前往设置开启无障碍服务</string>
     <string name="permission_accessibility_guide">需要 Android 11 及以上系统，请前往设置开启无障碍服务</string>
     <string name="permission_projection_stopped">录屏授权已失效，请重新授权</string>
+    <string name="permission_camera_requesting">正在请求相机权限…</string>
+    <string name="permission_camera_required">需要相机权限才能拍照搜题</string>
+    <string name="permission_camera_denied_permanent">相机权限被永久拒绝，请前往设置开启</string>
+    <string name="camera_bind_failed">相机初始化失败</string>
+    <string name="camera_capture_failed">拍照失败</string>
+    <string name="camera_not_ready">相机未准备好，请稍后再试</string>
+    <string name="ocr_init_failed">OCR 模型加载失败：%1$s</string>
+    <string name="ocr_not_initialized">OCR 未初始化，无法识别</string>
+    <string name="ocr_failed_with_reason">识别失败：%1$s</string>
+    <string name="no_match_found">未在题库中找到匹配题目</string>
+    <string name="search_suggestions">建议：\n1. 检查题目是否已导入\n2. 尝试截取更清晰的题目区域\n3. 手动搜索关键词</string>
+    <string name="close">关闭</string>
+    <string name="accessibility_screenshot_requires_android_11">无障碍截图需要 Android 11 及以上系统</string>
+    <string name="screenshot_invalid_area">截图区域无效</string>
+    <string name="screenshot_crop_failed">截图裁剪失败</string>
+    <string name="screenshot_failed_null">截图返回为空，请检查无障碍权限</string>
+    <string name="screenshot_failed_error_code">截图失败，错误码：%1$s</string>
+    <string name="screenshot_failed_restricted">截图失败，请检查无障碍权限是否被系统限制</string>
+    <string name="screenshot_service_initializing">录屏服务正在初始化，请稍后再试</string>
+    <string name="screenshot_service_not_ready">录屏服务尚未就绪，请重新授权</string>
+    <string name="screenshot_failed_with_reason">截图失败：%1$s</string>
 
     <!-- 截图方式选择 -->
     <string name="capture_choice_title">选择截图方式</string>
@@ -42,6 +63,10 @@
     <!-- 悬浮球 -->
     <string name="float_ball_showing">悬浮球已显示</string>
     <string name="float_ball_hidden">悬浮球已隐藏</string>
+    <string name="float_select_capture_method">请先选择截图方式</string>
+    <string name="float_channel_name">悬浮搜题服务</string>
+    <string name="float_channel_desc">保持悬浮球显示</string>
+    <string name="float_service_running">悬浮搜题运行中</string>
 
     <!-- 题库管理 -->
     <string name="bank_title">我的题库</string>
@@ -71,6 +96,8 @@
     <!-- 无障碍服务 -->
     <string name="accessibility_service_desc">搜题助手无障碍服务，用于在任意界面截图识别题目内容</string>
     <string name="accessibility_service_summary">开启后可使用悬浮球在任意App内截图搜题</string>
+    <string name="accessibility_service_started">无障碍搜题服务已启动</string>
+    <string name="float_ball_start_failed">悬浮球启动失败，请手动返回App开启</string>
 
     <!-- 设置 -->
     <string name="settings">设置</string>

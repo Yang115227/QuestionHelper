@@ -4,8 +4,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.graphics.PixelFormat
 import android.graphics.Rect
@@ -21,6 +23,7 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.questionhelper.MainActivity
+import com.questionhelper.R
 
 class FloatWindowService : Service() {
     private lateinit var windowManager: WindowManager
@@ -29,6 +32,14 @@ class FloatWindowService : Service() {
     private var isShowingCrop = false
     private lateinit var prefs: SharedPreferences
     private val handler = Handler(Looper.getMainLooper())
+    private var receiverRegistered = false
+
+    /**
+     * 标记是否正在等待录屏服务初始化完成。
+     * 用于解决：授权弹窗后用户立刻点击悬浮球，此时服务尚未初始化导致重复弹出选择对话框。
+     */
+    @Volatile
+    private var waitingScreenCapture = false
 
     companion object {
         private const val TAG = "FloatWindow"
@@ -45,7 +56,7 @@ class FloatWindowService : Service() {
 
         fun start(context: Context) {
             if (!checkPermission(context)) {
-                Toast.makeText(context, "请先开启悬浮窗权限", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, R.string.permission_overlay_denied, Toast.LENGTH_LONG).show()
                 val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
@@ -57,6 +68,22 @@ class FloatWindowService : Service() {
                 ContextCompat.startForegroundService(context, intent)
             } else {
                 context.startService(intent)
+            }
+        }
+    }
+
+    private val serviceStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                ScreenCaptureService.ACTION_PROJECTION_READY -> {
+                    Log.d(TAG, "Screen capture service ready")
+                    waitingScreenCapture = false
+                }
+                ScreenCaptureService.ACTION_PROJECTION_STOPPED -> {
+                    Log.d(TAG, "Screen capture service stopped")
+                    waitingScreenCapture = false
+                    ScreenCaptureService.markProjectionStopped()
+                }
             }
         }
     }
@@ -73,22 +100,41 @@ class FloatWindowService : Service() {
         }
         startForeground(NOTIFICATION_ID, createNotification())
 
+        registerServiceStateReceiver()
         showFloatBall()
+    }
+
+    private fun registerServiceStateReceiver() {
+        try {
+            val filter = IntentFilter().apply {
+                addAction(ScreenCaptureService.ACTION_PROJECTION_READY)
+                addAction(ScreenCaptureService.ACTION_PROJECTION_STOPPED)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(serviceStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(serviceStateReceiver, filter)
+            }
+            receiverRegistered = true
+        } catch (e: Throwable) {
+            Log.e(TAG, "Register service state receiver failed", e)
+        }
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                CHANNEL_ID, "悬浮搜题服务", NotificationManager.IMPORTANCE_LOW
-            ).apply { description = "保持悬浮球显示" }
+                CHANNEL_ID, getString(R.string.float_channel_name),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply { description = getString(R.string.float_channel_desc) }
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("搜题助手")
-            .setContentText("悬浮搜题运行中")
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.float_service_running))
             .setSmallIcon(android.R.drawable.ic_menu_search)
             .setOngoing(true)
             .build()
@@ -137,16 +183,30 @@ class FloatWindowService : Service() {
             return
         }
 
-        val hasScreenCapture = ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized
+        val hasScreenCapture = ScreenCaptureService.isRunning
+        val hasScreenCaptureReady = ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized
         val hasAccessibility = isAccessibilityServiceEnabled()
 
+        // 如果正在等待录屏初始化且未启用无障碍，提示用户稍后再试，避免重复弹选择框
+        if (waitingScreenCapture && !hasScreenCaptureReady && !hasAccessibility) {
+            Toast.makeText(this, R.string.screenshot_service_initializing, Toast.LENGTH_SHORT).show()
+            return
+        }
+
         if (!hasScreenCapture && !hasAccessibility) {
-            Toast.makeText(this, "请先选择截图方式", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.float_select_capture_method, Toast.LENGTH_SHORT).show()
             val intent = Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 putExtra("show_capture_choice", true)
             }
             startActivity(intent)
+            // 标记正在等待用户授权并初始化录屏
+            waitingScreenCapture = true
+            return
+        }
+
+        if (hasScreenCapture && !ScreenCaptureService.isInitialized) {
+            Toast.makeText(this, R.string.screenshot_service_initializing, Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -226,7 +286,7 @@ class FloatWindowService : Service() {
         when {
             ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized -> {
                 val intent = Intent(this, ScreenCaptureService::class.java).apply {
-                    action = "CAPTURE"
+                    action = ScreenCaptureService.ACTION_CAPTURE
                     putExtra("rect", rect)
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -243,7 +303,7 @@ class FloatWindowService : Service() {
                 startService(intent)
             }
             else -> {
-                Toast.makeText(this, "截图服务未运行", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, R.string.screenshot_service_not_ready, Toast.LENGTH_SHORT).show()
                 floatBall?.visibility = View.VISIBLE
             }
         }
@@ -310,6 +370,9 @@ class FloatWindowService : Service() {
         floatBall?.let {
             try { windowManager.removeView(it) } catch (_: Exception) {}
             floatBall = null
+        }
+        if (receiverRegistered) {
+            try { unregisterReceiver(serviceStateReceiver) } catch (_: Exception) {}
         }
     }
 }

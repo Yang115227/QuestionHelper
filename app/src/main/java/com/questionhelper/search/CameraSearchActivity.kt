@@ -8,7 +8,9 @@ import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
 import android.graphics.Rect
 import android.graphics.YuvImage
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -27,15 +29,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import com.google.common.util.concurrent.ListenableFuture
-import com.questionhelper.ocr.OcrManager
-import com.questionhelper.QuestionApp
-import com.questionhelper.data.QuestionRepository
-import com.questionhelper.ui.theme.QuestionHelperTheme
 import androidx.lifecycle.lifecycleScope
+import com.google.common.util.concurrent.ListenableFuture
+import com.questionhelper.QuestionApp
+import com.questionhelper.R
+import com.questionhelper.data.QuestionRepository
+import com.questionhelper.ocr.OcrManager
+import com.questionhelper.ui.theme.QuestionHelperTheme
 import kotlinx.coroutines.*
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ExecutorService
@@ -48,55 +52,74 @@ class CameraSearchActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cameraExecutor = Executors.newSingleThreadExecutor()
-        initOcrManager()
 
         val permissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) { isGranted ->
             if (isGranted) {
-                setContent {
-                    QuestionHelperTheme {
-                        CameraSearchScreen(
-                            onCapture = { bitmap -> processImage(bitmap) },
-                            onClose = { finish() }
-                        )
-                    }
-                }
+                initOcrManager()
+                showCameraScreen()
             } else {
-                Toast.makeText(this, "需要相机权限", Toast.LENGTH_SHORT).show()
+                if (!shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+                    Toast.makeText(
+                        this,
+                        R.string.permission_camera_denied_permanent,
+                        Toast.LENGTH_LONG
+                    ).show()
+                    openAppSettings()
+                } else {
+                    Toast.makeText(this, R.string.permission_camera_required, Toast.LENGTH_LONG).show()
+                }
                 finish()
             }
         }
 
-        when (PackageManager.PERMISSION_GRANTED) {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) -> {
-                setContent {
-                    QuestionHelperTheme {
-                        CameraSearchScreen(
-                            onCapture = { bitmap -> processImage(bitmap) },
-                            onClose = { finish() }
-                        )
-                    }
-                }
+        when (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)) {
+            PackageManager.PERMISSION_GRANTED -> {
+                initOcrManager()
+                showCameraScreen()
             }
-            else -> permissionLauncher.launch(Manifest.permission.CAMERA)
+            else -> {
+                Toast.makeText(this, R.string.permission_camera_requesting, Toast.LENGTH_SHORT).show()
+                permissionLauncher.launch(Manifest.permission.CAMERA)
+            }
+        }
+    }
+
+    private fun showCameraScreen() {
+        setContent {
+            QuestionHelperTheme {
+                CameraSearchScreen(
+                    onCapture = { bitmap -> processImage(bitmap) },
+                    onClose = { finish() }
+                )
+            }
         }
     }
 
     private fun initOcrManager() {
+        if (ocrManager != null) return
         try {
             ocrManager = OcrManager(this)
-            Log.d("CameraSearch", "OCR initialized")
-        } catch (e: Exception) {
+            Log.d("CameraSearch", "OCR initialized, ready=${ocrManager?.isReady}")
+        } catch (e: Throwable) {
             Log.e("CameraSearch", "OCR init failed", e)
-            Toast.makeText(this, "OCR 模型加载失败：${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.ocr_init_failed, e.message), Toast.LENGTH_LONG).show()
         }
     }
 
+    private fun openAppSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", packageName, null)
+        }
+        startActivity(intent)
+    }
+
     private fun processImage(bitmap: Bitmap) {
+        initOcrManager()
         val manager = ocrManager
         if (manager == null) {
-            Toast.makeText(this, "OCR 未初始化，无法识别", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.ocr_not_initialized, Toast.LENGTH_SHORT).show()
             return
         }
         lifecycleScope.launch {
@@ -108,17 +131,14 @@ class CameraSearchActivity : ComponentActivity() {
                     if (question != null) {
                         showResult(question.content, question.answer, question.analysis)
                     } else {
-                        showResult(text, "未在题库中找到匹配题目", """建议：
-1. 检查题目是否已导入
-2. 尝试截取更清晰的题目区域
-3. 手动搜索关键词""")
+                        showResult(text, getString(R.string.no_match_found), getString(R.string.search_suggestions))
                     }
                 } else {
-                    Toast.makeText(this@CameraSearchActivity, "未识别到文字", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@CameraSearchActivity, R.string.ocr_no_text, Toast.LENGTH_SHORT).show()
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e("CameraSearch", "Error", e)
-                Toast.makeText(this@CameraSearchActivity, "识别失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@CameraSearchActivity, getString(R.string.ocr_failed_with_reason, e.message), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -154,21 +174,22 @@ fun CameraSearchScreen(
         previewView?.let { view ->
             val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
             cameraProviderFuture.addListener({
-                val cameraProvider = cameraProviderFuture.get()
-                val preview = Preview.Builder().build().also {
-                    it.setSurfaceProvider(view.surfaceProvider)
-                }
-                val capture = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                    .build()
-                imageCapture = capture
-
-                val selector = CameraSelector.DEFAULT_BACK_CAMERA
                 try {
+                    val cameraProvider = cameraProviderFuture.get()
+                    val preview = Preview.Builder().build().also {
+                        it.setSurfaceProvider(view.surfaceProvider)
+                    }
+                    val capture = ImageCapture.Builder()
+                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                        .build()
+                    imageCapture = capture
+
+                    val selector = CameraSelector.DEFAULT_BACK_CAMERA
                     cameraProvider.unbindAll()
                     cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, capture)
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     Log.e("Camera", "Binding failed", e)
+                    Toast.makeText(context, R.string.camera_bind_failed, Toast.LENGTH_LONG).show()
                 }
             }, ContextCompat.getMainExecutor(context))
         }
@@ -182,17 +203,19 @@ fun CameraSearchScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // 顶部关闭按钮
         IconButton(
             onClick = onClose,
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(16.dp)
         ) {
-            Icon(Icons.Default.Close, contentDescription = "关闭", tint = MaterialTheme.colorScheme.onPrimary)
+            Icon(
+                Icons.Default.Close,
+                contentDescription = stringResource(R.string.close),
+                tint = MaterialTheme.colorScheme.onPrimary
+            )
         }
 
-        // 底部拍照按钮
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -215,15 +238,23 @@ fun CameraSearchScreen(
                                 override fun onError(exception: ImageCaptureException) {
                                     isProcessing = false
                                     Log.e("Camera", "Capture failed", exception)
+                                    Toast.makeText(context, R.string.camera_capture_failed, Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )
+                    } ?: run {
+                        isProcessing = false
+                        Toast.makeText(context, R.string.camera_not_ready, Toast.LENGTH_SHORT).show()
                     }
                 },
                 modifier = Modifier.size(80.dp),
                 shape = MaterialTheme.shapes.extraLarge
             ) {
-                Icon(Icons.Default.Camera, contentDescription = "拍照", modifier = Modifier.size(32.dp))
+                Icon(
+                    Icons.Default.Camera,
+                    contentDescription = stringResource(R.string.take_photo),
+                    modifier = Modifier.size(32.dp)
+                )
             }
         }
 
@@ -244,7 +275,7 @@ private fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
             }
             else -> yuv420888ToBitmap(image)
         }
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
         Log.e("Camera", "Convert ImageProxy to Bitmap failed", e)
         null
     }

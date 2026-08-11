@@ -13,11 +13,15 @@ class OcrManager(context: Context) {
         get() = predictor != null
 
     init {
+        initPredictor(context)
+    }
+
+    private fun initPredictor(context: Context) {
         try {
             val assetPath = "paddleocr"
             predictor = OCRPredictor(context, assetPath)
             Log.d(tag, "OCR initialized with PaddleOCR")
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(tag, "OCR Predictor init failed, will fallback to ML Kit", e)
             predictor = null
         }
@@ -35,7 +39,7 @@ class OcrManager(context: Context) {
         try {
             val results = predictor!!.runOcr(bitmap)
             results.joinToString("\n") { it.text }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(tag, "OCR recognition failed", e)
             ""
         }
@@ -44,7 +48,7 @@ class OcrManager(context: Context) {
     fun close() {
         try {
             predictor?.release()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(tag, "Release failed", e)
         } finally {
             predictor = null
