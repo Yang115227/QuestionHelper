@@ -283,25 +283,37 @@ class ScreenCaptureService : Service() {
     }
 
     /**
-     * 获取最新一帧截图
+     * 获取最新一帧截图，带重试
      */
     private fun captureScreen(): Bitmap? {
         if (!isInitialized || imageReader == null) {
             Log.w(tag, "Capture called but not initialized")
             return null
         }
-        var image: Image? = null
-        return try {
-            image = imageReader?.acquireLatestImage() ?: return null
-            imageToBitmap(image)
-        } catch (e: Exception) {
-            Log.e(tag, "Capture failed", e)
-            null
-        } finally {
+        repeat(5) { attempt ->
+            var image: Image? = null
             try {
-                image?.close()
-            } catch (_: Throwable) {}
+                image = imageReader?.acquireLatestImage()
+                if (image != null) {
+                    val bitmap = imageToBitmap(image)
+                    if (bitmap != null && !isBlankBitmap(bitmap)) {
+                        return bitmap
+                    }
+                    bitmap?.recycle()
+                    Log.w(tag, "Capture attempt $attempt got blank bitmap")
+                } else {
+                    Log.w(tag, "Capture attempt $attempt got null image")
+                }
+            } catch (e: Exception) {
+                Log.e(tag, "Capture attempt $attempt failed", e)
+            } finally {
+                try {
+                    image?.close()
+                } catch (_: Throwable) {}
+            }
+            Thread.sleep(200)
         }
+        return null
     }
 
     /**
@@ -316,8 +328,9 @@ class ScreenCaptureService : Service() {
             val rowPadding = rowStride - pixelStride * image.width
 
             // 创建 Bitmap 时考虑 rowPadding
+            val widthWithPadding = image.width + rowPadding / pixelStride
             val bitmap = Bitmap.createBitmap(
-                image.width + rowPadding / pixelStride,
+                widthWithPadding,
                 image.height,
                 Bitmap.Config.ARGB_8888
             )
@@ -337,6 +350,32 @@ class ScreenCaptureService : Service() {
         }
     }
 
+    /**
+     * 简单判断 Bitmap 是否全黑或全透明
+     */
+    private fun isBlankBitmap(bitmap: Bitmap): Boolean {
+        return try {
+            val width = bitmap.width
+            val height = bitmap.height
+            if (width <= 0 || height <= 0) return true
+            val sampleStep = maxOf(1, minOf(width, height) / 10)
+            var hasNonBlank = false
+            outer@ for (y in 0 until height step sampleStep) {
+                for (x in 0 until width step sampleStep) {
+                    val pixel = bitmap.getPixel(x, y)
+                    if (pixel and 0xFFFFFF != 0 && pixel ushr 24 > 10) {
+                        hasNonBlank = true
+                        break@outer
+                    }
+                }
+            }
+            !hasNonBlank
+        } catch (e: Throwable) {
+            Log.e(tag, "Check blank bitmap failed", e)
+            false
+        }
+    }
+
     private fun processBitmap(bitmap: Bitmap) {
         val manager = try {
             OcrManager(this)
@@ -344,6 +383,14 @@ class ScreenCaptureService : Service() {
             Log.e(tag, "OCR init failed", e)
             handler.post { Toast.makeText(this, R.string.ocr_not_initialized, Toast.LENGTH_SHORT).show() }
             bitmap.recycle()
+            return
+        }
+
+        if (!manager.isReady) {
+            Log.w(tag, "OCR not ready, maybe paddle models missing")
+            handler.post { Toast.makeText(this, R.string.ocr_not_initialized, Toast.LENGTH_LONG).show() }
+            bitmap.recycle()
+            manager.close()
             return
         }
 

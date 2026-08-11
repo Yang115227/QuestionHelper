@@ -221,12 +221,24 @@ class AccessibilitySearchService : AccessibilityService() {
     private fun extractBitmap(result: Any?): Pair<Bitmap?, String?> {
         if (result == null) return null to null
 
-        val clazz = result.javaClass
-        Log.d(TAG, "Screenshot result class: ${clazz.name}")
+        // 某些 ROM 可能直接返回 Bitmap
+        if (result is Bitmap) return result to null
 
-        // 1. 优先尝试 public getBitmap()
+        val clazz = result.javaClass
+        val className = clazz.name
+        Log.d(TAG, "Screenshot result class: $className")
+
+        // 如果类名就是 ScreenshotResult，直接用 Class.forName 定位，避免子类/代理干扰
+        val targetClass = try {
+            Class.forName("android.accessibilityservice.AccessibilityService\$ScreenshotResult")
+        } catch (e: Throwable) {
+            Log.w(TAG, "Load ScreenshotResult class failed", e)
+            clazz
+        }
+
+        // 1. public getBitmap()
         try {
-            val method = clazz.getMethod("getBitmap")
+            val method = targetClass.getMethod("getBitmap")
             method.invoke(result)?.let {
                 if (it is Bitmap) return it to null
             }
@@ -234,9 +246,9 @@ class AccessibilitySearchService : AccessibilityService() {
             Log.w(TAG, "getBitmap public method failed", e)
         }
 
-        // 2. 尝试 declared getBitmap()（可能是 hide API）
+        // 2. declared getBitmap()
         try {
-            val method = clazz.getDeclaredMethod("getBitmap")
+            val method = targetClass.getDeclaredMethod("getBitmap")
             method.isAccessible = true
             method.invoke(result)?.let {
                 if (it is Bitmap) return it to null
@@ -245,12 +257,12 @@ class AccessibilitySearchService : AccessibilityService() {
             Log.w(TAG, "getBitmap declared method failed", e)
         }
 
-        // 3. 遍历所有方法，找返回 Bitmap 且无形参的方法
+        // 3. 遍历 result 类及父类的所有方法，找返回 Bitmap 且无形参的方法
         try {
-            clazz.methods.plus(clazz.declaredMethods).distinct().forEach { method ->
-                if (method.name.contains("Bitmap", ignoreCase = true) ||
-                    method.returnType == Bitmap::class.java) {
-                    if (method.parameterTypes.isEmpty()) {
+            var currentClass: Class<*>? = clazz
+            while (currentClass != null && currentClass != Any::class.java) {
+                currentClass.methods.plus(currentClass.declaredMethods).distinct().forEach { method ->
+                    if (method.returnType == Bitmap::class.java && method.parameterTypes.isEmpty()) {
                         try {
                             method.isAccessible = true
                             method.invoke(result)?.let {
@@ -261,30 +273,43 @@ class AccessibilitySearchService : AccessibilityService() {
                         }
                     }
                 }
+                currentClass = currentClass.superclass
             }
         } catch (e: Throwable) {
             Log.w(TAG, "Scan methods failed", e)
         }
 
-        // 4. 尝试直接访问字段 mBitmap / bitmap
+        // 4. 遍历 result 类及父类的所有字段，找 Bitmap 类型
         try {
-            clazz.getDeclaredField("mBitmap").apply {
-                isAccessible = true
-                get(result)?.let { if (it is Bitmap) return it to null }
+            var currentClass: Class<*>? = clazz
+            while (currentClass != null && currentClass != Any::class.java) {
+                currentClass.fields.plus(currentClass.declaredFields).distinct().forEach { field ->
+                    if (field.type == Bitmap::class.java) {
+                        try {
+                            field.isAccessible = true
+                            field.get(result)?.let { if (it is Bitmap) return it to null }
+                        } catch (e: Throwable) {
+                            Log.w(TAG, "Field ${field.name} get failed", e)
+                        }
+                    }
+                }
+                currentClass = currentClass.superclass
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "mBitmap field failed", e)
-        }
-        try {
-            clazz.getDeclaredField("bitmap").apply {
-                isAccessible = true
-                get(result)?.let { if (it is Bitmap) return it to null }
-            }
-        } catch (e: Throwable) {
-            Log.w(TAG, "bitmap field failed", e)
+            Log.w(TAG, "Scan fields failed", e)
         }
 
-        return null to "无法从 ${clazz.name} 中提取 Bitmap，请检查系统是否支持无障碍截图"
+        // 5. 把类支持的方法/字段打印出来，便于排查
+        try {
+            val methods = clazz.declaredMethods.map { "${it.name}:${it.returnType.simpleName}" }
+            val fields = clazz.declaredFields.map { "${it.name}:${it.type.simpleName}" }
+            Log.d(TAG, "Declared methods: $methods")
+            Log.d(TAG, "Declared fields: $fields")
+        } catch (e: Throwable) {
+            Log.w(TAG, "Dump class info failed", e)
+        }
+
+        return null to "无法从 $className 中提取 Bitmap，请检查系统是否支持无障碍截图"
     }
 
     private fun processScreenshotBitmap(bitmap: Bitmap, rect: Rect) {
@@ -323,8 +348,9 @@ class AccessibilitySearchService : AccessibilityService() {
 
     private fun processBitmap(bitmap: Bitmap) {
         val manager = ensureOcrManager()
-        if (manager == null) {
-            handler.post { Toast.makeText(this, R.string.ocr_not_initialized, Toast.LENGTH_SHORT).show() }
+        if (manager == null || !manager.isReady) {
+            Log.w(TAG, "OCR not ready, maybe paddle models missing")
+            handler.post { Toast.makeText(this, R.string.ocr_not_initialized, Toast.LENGTH_LONG).show() }
             bitmap.recycle()
             return
         }
