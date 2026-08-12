@@ -121,16 +121,6 @@ dependencies {
     implementation(libs.camera.lifecycle)
     implementation(libs.camera.view)
 
-    // ML Kit (主 OCR 方案，无需额外模型文件)
-    implementation(libs.mlkit.text)
-    implementation(libs.mlkit.text.chinese)
-    // 强制统一内部依赖版本，避免 Google Play 服务内部模型下载冲突
-    constraints {
-        implementation("com.google.android.gms:play-services-mlkit-text-recognition-common:19.0.0") {
-            because("统一 ML Kit 内部公共库版本，避免中文识别包与主包冲突")
-        }
-    }
-
     // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
