@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 class OcrManager(context: Context) {
     private var predictor: OCRPredictor? = null
     private val tag = "OcrManager"
+
     val isReady: Boolean
         get() = predictor != null
 
@@ -22,7 +23,7 @@ class OcrManager(context: Context) {
             predictor = OCRPredictor(context, assetPath)
             Log.d(tag, "OCR initialized with PaddleOCR")
         } catch (e: Throwable) {
-            Log.e(tag, "OCR Predictor init failed, will fallback to ML Kit", e)
+            Log.e(tag, "OCR Predictor init failed", e)
             predictor = null
         }
     }
