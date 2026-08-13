@@ -2,9 +2,9 @@ name: CI Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, trae/agent-QQOeMZ ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, trae/agent-QQOeMZ ]
   workflow_dispatch:
     inputs:
       build_type:
@@ -76,3 +76,4 @@ jobs:
         with:
           name: app-release
           path: app/build/outputs/apk/release/*.apk
+
