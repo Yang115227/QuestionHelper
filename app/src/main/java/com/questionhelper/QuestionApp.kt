@@ -1,6 +1,7 @@
 package com.questionhelper
 
 import android.app.Application
+import android.util.Log
 import androidx.room.Room
 import com.questionhelper.data.AppDatabase
 import com.questionhelper.ocr.OcrManager
@@ -21,8 +22,14 @@ class QuestionApp : Application() {
             "question_db"
         ).build()
 
-        // 应用启动时预初始化 OCR（耗时操作，避免截图时才创建）
-        ocrManager = OcrManager(this)
+        ocrManager = try {
+            OcrManager(this).also {
+                Log.d("QuestionApp", "OcrManager initialized, ready=${it.isReady}")
+            }
+        } catch (e: Throwable) {
+            Log.e("QuestionApp", "Fatal: OcrManager init crashed: ${e.message}", e)
+            // 创建一个不可用的实例，避免后续 NPE
+            OcrManager(this)
+        }
     }
 }
-
