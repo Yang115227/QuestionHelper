@@ -104,7 +104,6 @@ class AccessibilitySearchService : AccessibilityService() {
         try {
             val executor = Executors.newSingleThreadExecutor()
             val callbackClass = Class.forName("android.accessibilityservice.AccessibilityService\$TakeScreenshotCallback")
-            // ✅ 修复：显式指定 arrayOf 的元素类型为 Class<*>
             val paramTypes = arrayOf<Class<*>>(
                 Int::class.javaPrimitiveType!!,
                 java.util.concurrent.Executor::class.java,
@@ -113,7 +112,7 @@ class AccessibilitySearchService : AccessibilityService() {
             val method = AccessibilityService::class.java.getDeclaredMethod("takeScreenshot", *paramTypes)
             val proxy = java.lang.reflect.Proxy.newProxyInstance(
                 callbackClass.classLoader,
-                arrayOf<Class<*>>(callbackClass) // ✅ 同样显式指定类型
+                arrayOf<Class<*>>(callbackClass)
             ) { _, proxyMethod, args ->
                 when (proxyMethod.name) {
                     "onSuccess" -> {
@@ -313,8 +312,12 @@ class AccessibilitySearchService : AccessibilityService() {
                 safeRect.width(),
                 safeRect.height()
             )
+            val safeCropped = cropped.copy(Bitmap.Config.ARGB_8888, true)
             bitmap.recycle()
-            processBitmap(cropped)
+            cropped.recycle()
+
+            Log.d(TAG, "Accessibility cropped: ${safeCropped.width}x${safeCropped.height}")
+            processBitmap(safeCropped)
         } catch (e: Throwable) {
             Log.e(TAG, "Crop screenshot failed", e)
             bitmap.recycle()
@@ -339,7 +342,9 @@ class AccessibilitySearchService : AccessibilityService() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                Log.d(TAG, "OCR starting, bitmap=${bitmap.width}x${bitmap.height}")
                 val text = manager.recognizeFromBitmap(bitmap)
+                Log.d(TAG, "OCR result: '$text'")
                 bitmap.recycle()
 
                 if (text.isNotEmpty()) {
@@ -351,6 +356,8 @@ class AccessibilitySearchService : AccessibilityService() {
                     val analysisText = question?.analysis ?: ""
                     val isMatched = question != null
 
+                    Log.d(TAG, "Search result: matched=$isMatched")
+
                     sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
                         putExtra(FloatWindowService.EXTRA_QUESTION, questionText)
                         putExtra(FloatWindowService.EXTRA_ANSWER, answerText)
@@ -359,13 +366,13 @@ class AccessibilitySearchService : AccessibilityService() {
                     })
                 } else {
                     handler.post {
-                        Toast.makeText(this@AccessibilitySearchService, R.string.ocr_no_text, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@AccessibilitySearchService, "未识别到文字，请确保框选区域包含清晰的文字", Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (e: Throwable) {
                 Log.e(TAG, "OCR failed", e)
                 handler.post {
-                    Toast.makeText(this@AccessibilitySearchService, R.string.ocr_failed, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@AccessibilitySearchService, "文字识别失败：${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
