@@ -104,8 +104,8 @@ class AccessibilitySearchService : AccessibilityService() {
         try {
             val executor = Executors.newSingleThreadExecutor()
             val callbackClass = Class.forName("android.accessibilityservice.AccessibilityService\$TakeScreenshotCallback")
-            // 关键修复：arrayOf>() → arrayOf<Class<*>>()
-            val paramTypes = arrayOf<Class<*>>(
+            // 修复：使用 Kotlin 类型推断，无需显式 <Class<*>>
+            val paramTypes = arrayOf(
                 Int::class.javaPrimitiveType!!,
                 java.util.concurrent.Executor::class.java,
                 callbackClass
