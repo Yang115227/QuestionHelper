@@ -28,8 +28,6 @@ android {
 
     signingConfigs {
         create("release") {
-            // 优先从环境变量读取（CI 构建）
-            // 本地构建时如果没有设置环境变量，使用 debug 签名（避免硬编码密码）
             val storeFilePath = System.getenv("STORE_FILE") ?: ""
             val storePw = System.getenv("STORE_PASSWORD")
             val keyAliasName = System.getenv("KEY_ALIAS")
@@ -41,10 +39,7 @@ android {
                 keyAlias = keyAliasName
                 keyPassword = keyPw
             } else {
-                // 本地开发或 CI 没有配置签名时，使用 debug 签名
-                // 这样不会生成"正式签名"的 release 包，避免密钥泄露
                 println("Warning: Release signing config not fully set, falling back to debug signing")
-                // 不设置 storeFile 等属性，Gradle 会自动使用 debug 签名
             }
         }
     }
@@ -84,7 +79,7 @@ android {
     }
 
     sourceSets["main"].java {
-        // 没有真实 PaddlePredictor.jar 时，使用 stub 类参与编译，保证项目可构建
+        // 没有 PaddlePredictor.jar 时使用 stub 类编译，但运行时 OCR 不可用
         if (!file("libs/PaddlePredictor.jar").exists()) {
             srcDir("src/stub/java")
         }
@@ -112,7 +107,7 @@ dependencies {
     implementation(libs.androidx.navigation)
     implementation(libs.coroutines.android)
 
-    // Android Material Components（XML Theme.Material3 需要）
+    // Android Material Components
     implementation("com.google.android.material:material:1.12.0")
 
     // CameraX
@@ -126,7 +121,7 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
-    // POI (Excel 解析) —— 排除 Android 不兼容/重复的依赖
+    // POI (Excel 解析)
     implementation(libs.poi) {
         exclude(group = "org.apache.xmlbeans", module = "xmlbeans")
         exclude(group = "commons-codec", module = "commons-codec")
@@ -136,20 +131,16 @@ dependencies {
         exclude(group = "org.apache.commons", module = "commons-compress")
         exclude(group = "com.github.virtuald", module = "curvesapi")
     }
-    // poi-ooxml 解析 xlsx 需要 commons-compress（ZipArchiveInputStream）
     implementation("org.apache.commons:commons-compress:1.26.0") {
         exclude(group = "org.apache.commons", module = "commons-lang3")
         exclude(group = "commons-io", module = "commons-io")
     }
-    // Android 兼容的 XMLBeans 替代（poi 需要它解析 xlsx）
     implementation("org.apache.xmlbeans:xmlbeans:5.1.1") {
         exclude(group = "org.apache.logging.log4j")
     }
-    // Android 上缺失的 stax-api 替代
     implementation("javax.xml.stream:stax-api:1.0-2")
 
-    // Paddle Lite OCR —— 本地 JAR，可选依赖
-    // CI 会下载并放入 app/libs/；本地如果没有该文件，则使用 stub 类编译并降级到 ML Kit
+    // Paddle Lite OCR
     val paddleJar = file("libs/PaddlePredictor.jar")
     if (paddleJar.exists()) {
         implementation(files(paddleJar))
