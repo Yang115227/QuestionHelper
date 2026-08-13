@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.hardware.HardwareBuffer
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -19,34 +20,17 @@ import androidx.core.content.ContextCompat
 import com.questionhelper.QuestionApp
 import com.questionhelper.R
 import com.questionhelper.data.QuestionRepository
-import com.questionhelper.ocr.OcrManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
 class AccessibilitySearchService : AccessibilityService() {
-    private var ocrManager: OcrManager? = null
     private val handler = Handler(Looper.getMainLooper())
     private val TAG = "AccessibilitySearch"
     private var receiverRegistered = false
     @Volatile
     private var isConnected = false
-
-    private fun ensureOcrManager(): OcrManager? {
-        if (ocrManager == null) {
-            try {
-                ocrManager = OcrManager(this)
-                Log.d(TAG, "OcrManager initialized lazily, ready=${ocrManager?.isReady}")
-            } catch (e: Throwable) {
-                Log.e(TAG, "OcrManager init failed", e)
-                handler.post {
-                    Toast.makeText(this, getString(R.string.ocr_init_failed, e.message), Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-        return ocrManager
-    }
 
     private val captureReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -130,57 +114,48 @@ class AccessibilitySearchService : AccessibilityService() {
                 callbackClass.classLoader,
                 arrayOf(callbackClass)
             ) { _, proxyMethod, args ->
-                if (proxyMethod.name == "onSuccess") {
-                    val result = args?.getOrNull(0)
-                    try {
-                        val (bitmap, reflectionError) = extractBitmap(result)
-                        when {
-                            bitmap != null -> processScreenshotBitmap(bitmap, rect)
-                            reflectionError != null -> {
-                                Log.e(TAG, "Screenshot reflection failed: $reflectionError")
+                when (proxyMethod.name) {
+                    "onSuccess" -> {
+                        val result = args?.getOrNull(0)
+                        executor.shutdown()
+                        try {
+                            val bitmap = extractBitmapRobust(result)
+                            if (bitmap != null) {
+                                processScreenshotBitmap(bitmap, rect)
+                            } else {
+                                Log.e(TAG, "Screenshot bitmap is null")
                                 handler.post {
                                     Toast.makeText(
                                         this@AccessibilitySearchService,
-                                        getString(R.string.screenshot_reflection_failed, reflectionError),
+                                        getString(R.string.screenshot_reflection_failed, "Bitmap extraction returned null"),
                                         Toast.LENGTH_LONG
                                     ).show()
                                 }
                             }
-                            else -> {
-                                Log.e(TAG, "Screenshot returned null bitmap")
-                                handler.post {
-                                    Toast.makeText(
-                                        this@AccessibilitySearchService,
-                                        R.string.screenshot_failed_null,
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
+                        } catch (e: Throwable) {
+                            Log.e(TAG, "Process screenshot result failed", e)
+                            handler.post {
+                                Toast.makeText(
+                                    this@AccessibilitySearchService,
+                                    R.string.screenshot_crop_failed,
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
+                        } finally {
+                            releaseScreenshotResult(result)
                         }
-                    } catch (e: Throwable) {
-                        Log.e(TAG, "Process screenshot result failed", e)
+                    }
+                    "onFailure" -> {
+                        val errorCode = args?.getOrNull(0)
+                        executor.shutdown()
+                        Log.e(TAG, "Screenshot onFailure: $errorCode")
                         handler.post {
                             Toast.makeText(
                                 this@AccessibilitySearchService,
-                                R.string.screenshot_crop_failed,
+                                getString(R.string.screenshot_failed_error_code, errorCode),
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
-                    } finally {
-                        // Android 14+ 必须释放 ScreenshotResult，否则后续截图可能被系统拒绝
-                        releaseScreenshotResult(result)
-                        executor.shutdown()
-                    }
-                } else if (proxyMethod.name == "onFailure") {
-                    val errorCode = args?.getOrNull(0)
-                    executor.shutdown()
-                    Log.e(TAG, "Screenshot onFailure: $errorCode")
-                    handler.post {
-                        Toast.makeText(
-                            this@AccessibilitySearchService,
-                            getString(R.string.screenshot_failed_error_code, errorCode),
-                            Toast.LENGTH_SHORT
-                        ).show()
                     }
                 }
                 null
@@ -208,68 +183,80 @@ class AccessibilitySearchService : AccessibilityService() {
                 val releaseMethod = result.javaClass.getMethod("release")
                 releaseMethod.invoke(result)
             }
-            // API 30-33 没有 release() 方法，依赖 GC 回收
         } catch (e: Throwable) {
             Log.w(TAG, "release screenshot result failed", e)
         }
     }
 
     /**
-     * 通过反射从 ScreenshotResult 中提取 Bitmap。
-     * 返回 Pair<Bitmap?, String?>：成功返回 Bitmap，反射失败返回错误信息，真正 null 则两者皆为 null。
+     * 增强版 Bitmap 提取，支持：
+     * 1. 直接返回 Bitmap（某些 ROM）
+     * 2. getBitmap() 方法
+     * 3. Android 14+ 的 getHardwareBuffer() + Bitmap.wrapHardwareBuffer()
+     * 4. 遍历所有方法和字段兜底
      */
-    private fun extractBitmap(result: Any?): Pair<Bitmap?, String?> {
-        if (result == null) return null to null
-
-        // 某些 ROM 可能直接返回 Bitmap
-        if (result is Bitmap) return result to null
+    private fun extractBitmapRobust(result: Any?): Bitmap? {
+        if (result == null) return null
+        if (result is Bitmap) return result
 
         val clazz = result.javaClass
-        val className = clazz.name
-        Log.d(TAG, "Screenshot result class: $className")
+        Log.d(TAG, "Screenshot result class: ${clazz.name}")
 
-        // 如果类名就是 ScreenshotResult，直接用 Class.forName 定位，避免子类/代理干扰
-        val targetClass = try {
-            Class.forName("android.accessibilityservice.AccessibilityService\$ScreenshotResult")
-        } catch (e: Throwable) {
-            Log.w(TAG, "Load ScreenshotResult class failed", e)
-            clazz
-        }
-
-        // 1. public getBitmap()
+        // 1. 尝试 public getBitmap()
         try {
-            val method = targetClass.getMethod("getBitmap")
+            val method = clazz.getMethod("getBitmap")
             method.invoke(result)?.let {
-                if (it is Bitmap) return it to null
+                if (it is Bitmap) return it
             }
-        } catch (e: Throwable) {
-            Log.w(TAG, "getBitmap public method failed", e)
-        }
+        } catch (_: Throwable) {}
 
-        // 2. declared getBitmap()
+        // 2. 尝试 declared getBitmap()
         try {
-            val method = targetClass.getDeclaredMethod("getBitmap")
+            val method = clazz.getDeclaredMethod("getBitmap")
             method.isAccessible = true
             method.invoke(result)?.let {
-                if (it is Bitmap) return it to null
+                if (it is Bitmap) return it
             }
-        } catch (e: Throwable) {
-            Log.w(TAG, "getBitmap declared method failed", e)
+        } catch (_: Throwable) {}
+
+        // 3. Android 14+：尝试 getHardwareBuffer()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            try {
+                val method = clazz.getMethod("getHardwareBuffer")
+                val hardwareBuffer = method.invoke(result)
+                if (hardwareBuffer is HardwareBuffer) {
+                    val bitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, null)
+                    if (bitmap != null) {
+                        Log.d(TAG, "Bitmap extracted from HardwareBuffer")
+                        return bitmap
+                    }
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "getHardwareBuffer failed", e)
+            }
         }
 
-        // 3. 遍历 result 类及父类的所有方法，找返回 Bitmap 且无形参的方法
+        // 4. 遍历所有方法，找返回 Bitmap 或 HardwareBuffer 的无参方法
         try {
             var currentClass: Class<*>? = clazz
             while (currentClass != null && currentClass != Any::class.java) {
-                currentClass.methods.plus(currentClass.declaredMethods).distinct().forEach { method ->
-                    if (method.returnType == Bitmap::class.java && method.parameterTypes.isEmpty()) {
-                        try {
-                            method.isAccessible = true
-                            method.invoke(result)?.let {
-                                if (it is Bitmap) return it to null
+                val allMethods = (currentClass.methods + currentClass.declaredMethods).distinct()
+                for (method in allMethods) {
+                    if (method.parameterTypes.isEmpty()) {
+                        method.isAccessible = true
+                        when {
+                            method.returnType == Bitmap::class.java -> {
+                                method.invoke(result)?.let {
+                                    if (it is Bitmap) return it
+                                }
                             }
-                        } catch (e: Throwable) {
-                            Log.w(TAG, "Method ${method.name} invoke failed", e)
+                            method.returnType == HardwareBuffer::class.java && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
+                                method.invoke(result)?.let { hb ->
+                                    if (hb is HardwareBuffer) {
+                                        Bitmap.wrapHardwareBuffer(hb, null)?.let { return it }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -279,17 +266,25 @@ class AccessibilitySearchService : AccessibilityService() {
             Log.w(TAG, "Scan methods failed", e)
         }
 
-        // 4. 遍历 result 类及父类的所有字段，找 Bitmap 类型
+        // 5. 遍历所有字段，找 Bitmap 或 HardwareBuffer 类型
         try {
             var currentClass: Class<*>? = clazz
             while (currentClass != null && currentClass != Any::class.java) {
-                currentClass.fields.plus(currentClass.declaredFields).distinct().forEach { field ->
-                    if (field.type == Bitmap::class.java) {
-                        try {
-                            field.isAccessible = true
-                            field.get(result)?.let { if (it is Bitmap) return it to null }
-                        } catch (e: Throwable) {
-                            Log.w(TAG, "Field ${field.name} get failed", e)
+                val allFields = (currentClass.fields + currentClass.declaredFields).distinct()
+                for (field in allFields) {
+                    field.isAccessible = true
+                    when {
+                        field.type == Bitmap::class.java -> {
+                            field.get(result)?.let {
+                                if (it is Bitmap) return it
+                            }
+                        }
+                        field.type == HardwareBuffer::class.java && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
+                            field.get(result)?.let { hb ->
+                                if (hb is HardwareBuffer) {
+                                    Bitmap.wrapHardwareBuffer(hb, null)?.let { return it }
+                                }
+                            }
                         }
                     }
                 }
@@ -299,17 +294,15 @@ class AccessibilitySearchService : AccessibilityService() {
             Log.w(TAG, "Scan fields failed", e)
         }
 
-        // 5. 把类支持的方法/字段打印出来，便于排查
+        // 6. 打印调试信息
         try {
             val methods = clazz.declaredMethods.map { "${it.name}:${it.returnType.simpleName}" }
             val fields = clazz.declaredFields.map { "${it.name}:${it.type.simpleName}" }
             Log.d(TAG, "Declared methods: $methods")
             Log.d(TAG, "Declared fields: $fields")
-        } catch (e: Throwable) {
-            Log.w(TAG, "Dump class info failed", e)
-        }
+        } catch (_: Throwable) {}
 
-        return null to "无法从 $className 中提取 Bitmap，请检查系统是否支持无障碍截图"
+        return null
     }
 
     private fun processScreenshotBitmap(bitmap: Bitmap, rect: Rect) {
@@ -347,9 +340,10 @@ class AccessibilitySearchService : AccessibilityService() {
     }
 
     private fun processBitmap(bitmap: Bitmap) {
-        val manager = ensureOcrManager()
-        if (manager == null || !manager.isReady) {
-            Log.w(TAG, "OCR not ready, maybe paddle models missing")
+        val manager = QuestionApp.ocrManager
+
+        if (!manager.isReady) {
+            Log.w(TAG, "OCR not ready")
             handler.post { Toast.makeText(this, R.string.ocr_not_initialized, Toast.LENGTH_LONG).show() }
             bitmap.recycle()
             return
@@ -404,7 +398,5 @@ class AccessibilitySearchService : AccessibilityService() {
         if (receiverRegistered && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try { unregisterReceiver(captureReceiver) } catch (_: Throwable) {}
         }
-        ocrManager?.close()
-        ocrManager = null
     }
 }
