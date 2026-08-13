@@ -122,7 +122,8 @@ class ScreenCaptureService : Service() {
                     captureAndSearch(rect)
                 } else if (!isInitialized) {
                     handler.post {
-                        Toast.makeText(this, R.string.screenshot.screenshot_service_not_ready, Toast.LENGTH_SHORT).show()
+                        // ✅ 修复：R.string.screenshot.screenshot_service_not_ready → R.string.screenshot_service_not_ready
+                        Toast.makeText(this, R.string.screenshot_service_not_ready, Toast.LENGTH_SHORT).show()
                     }
                 }
                 return START_STICKY
@@ -292,7 +293,7 @@ class ScreenCaptureService : Service() {
 
     private fun imageToBitmap(image: Image): Bitmap? {
         return try {
-            val planes = image.planes  // ✅ 修复：原来是 image.pl.planes
+            val planes = image.planes
             val buffer = planes[0].buffer
             val pixelStride = planes[0].pixelStride
             val rowStride = planes[0].rowStride
