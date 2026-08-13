@@ -48,18 +48,23 @@ jobs:
           echo "Extracting..."
           tar -xzf paddle-lite.tar.gz --strip-components=1 -C paddle-lite
 
-          echo "Copying files..."
+          echo "Copying Paddle Lite files..."
           cp paddle-lite/java/jar/PaddlePredictor.jar app/libs/
           cp paddle-lite/java/so/libpaddle_lite_jni.so app/src/main/jniLibs/arm64-v8a/
           
-          # ✅ 复制 cxx 共享库（c++_shared 版本必需）
+          # 复制 cxx 共享库
           if [ -f paddle-lite/cxx/lib/libpaddle_light_api_shared.so ]; then
             cp paddle-lite/cxx/lib/libpaddle_light_api_shared.so app/src/main/jniLibs/arm64-v8a/
           fi
           
-          # ✅ 复制 libc++_shared.so（c++_shared 编译选项依赖）
+          # ✅ 关键修复：复制 libc++_shared.so（c++_shared 编译选项必需）
           if [ -f paddle-lite/cxx/lib/libc++_shared.so ]; then
             cp paddle-lite/cxx/lib/libc++_shared.so app/src/main/jniLibs/arm64-v8a/
+          elif [ -f paddle-lite/java/so/libc++_shared.so ]; then
+            cp paddle-lite/java/so/libc++_shared.so app/src/main/jniLibs/arm64-v8a/
+          else
+            echo "WARNING: libc++_shared.so not found in downloaded package, searching..."
+            find paddle-lite -name "libc++_shared.so" -exec cp {} app/src/main/jniLibs/arm64-v8a/ \; || true
           fi
 
           echo "Verifying files in jniLibs:"
