@@ -104,7 +104,6 @@ class AccessibilitySearchService : AccessibilityService() {
         try {
             val executor = Executors.newSingleThreadExecutor()
             val callbackClass = Class.forName("android.accessibilityservice.AccessibilityService\$TakeScreenshotCallback")
-            // ✅ 修复：arrayOf>() → arrayOf<Class<*>>()
             val paramTypes = arrayOf<Class<*>>(
                 Int::class.javaPrimitiveType!!,
                 java.util.concurrent.Executor::class.java,
@@ -328,8 +327,11 @@ class AccessibilitySearchService : AccessibilityService() {
         val manager = QuestionApp.ocrManager
 
         if (!manager.isReady) {
-            Log.w(TAG, "OCR not ready")
-            handler.post { Toast.makeText(this, R.string.ocr_not_initialized, Toast.LENGTH_LONG).show() }
+            val error = manager.initError ?: "未知错误"
+            Log.e(TAG, "OCR 未就绪: $error")
+            handler.post {
+                Toast.makeText(this, "OCR 未初始化\n$error", Toast.LENGTH_LONG).show()
+            }
             bitmap.recycle()
             return
         }
