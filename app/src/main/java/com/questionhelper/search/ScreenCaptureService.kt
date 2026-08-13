@@ -40,6 +40,7 @@ class ScreenCaptureService : Service() {
     private var screenWidth: Int = 1080
     private var screenHeight: Int = 1920
     private var screenDensity: Int = 320
+    private var foregroundStarted = false
 
     companion object {
         const val ACTION_CAPTURE = "com.questionhelper.action.CAPTURE"
@@ -84,7 +85,6 @@ class ScreenCaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
         readScreenMetrics()
-        startForeground()
     }
 
     private fun readScreenMetrics() {
@@ -109,6 +109,8 @@ class ScreenCaptureService : Service() {
             return START_NOT_STICKY
         }
 
+        ensureForeground()
+
         when (intent.action) {
             ACTION_CAPTURE -> {
                 val rect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -122,7 +124,12 @@ class ScreenCaptureService : Service() {
                     captureAndSearch(rect)
                 } else if (!isInitialized) {
                     handler.post {
-                        Toast.makeText(this, R.string.screenshot_service_not_ready, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "截图服务未就绪，请重新授权录屏", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Log.e(tag, "CAPTURE received but rect is null")
+                    handler.post {
+                        Toast.makeText(this, "截图区域为空，请重新框选", Toast.LENGTH_SHORT).show()
                     }
                 }
                 return START_STICKY
@@ -157,6 +164,13 @@ class ScreenCaptureService : Service() {
         lastError = null
         sendBroadcast(Intent(ACTION_PROJECTION_READY))
         return START_STICKY
+    }
+
+    private fun ensureForeground() {
+        if (!foregroundStarted) {
+            startForeground()
+            foregroundStarted = true
+        }
     }
 
     private fun reportInitFailed(error: String) {
@@ -218,9 +232,12 @@ class ScreenCaptureService : Service() {
     private fun captureAndSearch(rect: Rect) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val bitmap = captureScreen() ?: run {
+                Log.d(tag, "captureAndSearch started, rect=$rect")
+                val bitmap = captureScreen()
+                if (bitmap == null) {
+                    Log.w(tag, "captureScreen returned null")
                     handler.post {
-                        Toast.makeText(this@ScreenCaptureService, R.string.screenshot_failed_null, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@ScreenCaptureService, "截图失败：无法获取屏幕图像，请检查录屏权限或重试", Toast.LENGTH_LONG).show()
                     }
                     return@launch
                 }
@@ -247,13 +264,16 @@ class ScreenCaptureService : Service() {
                     safeRect.width(),
                     safeRect.height()
                 )
+                val safeCropped = cropped.copy(Bitmap.Config.ARGB_8888, true)
                 bitmap.recycle()
+                cropped.recycle()
 
-                processBitmap(cropped)
+                Log.d(tag, "Cropped bitmap: ${safeCropped.width}x${safeCropped.height}")
+                processBitmap(safeCropped)
             } catch (e: Throwable) {
                 Log.e(tag, "Capture and search failed", e)
                 handler.post {
-                    Toast.makeText(this@ScreenCaptureService, getString(R.string.screenshot_failed_with_reason, e.message), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@ScreenCaptureService, "截图处理失败：${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -269,14 +289,20 @@ class ScreenCaptureService : Service() {
             try {
                 image = imageReader?.acquireLatestImage()
                 if (image != null) {
+                    Log.d(tag, "Capture attempt $attempt: image acquired ${image.width}x${image.height}")
                     val bitmap = imageToBitmap(image)
-                    if (bitmap != null && !isBlankBitmap(bitmap)) {
-                        return bitmap
+                    if (bitmap != null) {
+                        if (!isBlankBitmap(bitmap)) {
+                            Log.d(tag, "Capture attempt $attempt: valid bitmap obtained")
+                            return bitmap
+                        }
+                        Log.w(tag, "Capture attempt $attempt: blank bitmap, retrying...")
+                        bitmap.recycle()
+                    } else {
+                        Log.w(tag, "Capture attempt $attempt: imageToBitmap returned null")
                     }
-                    bitmap?.recycle()
-                    Log.w(tag, "Capture attempt $attempt got blank bitmap")
                 } else {
-                    Log.w(tag, "Capture attempt $attempt got null image")
+                    Log.w(tag, "Capture attempt $attempt: null image")
                 }
             } catch (e: Exception) {
                 Log.e(tag, "Capture attempt $attempt failed", e)
@@ -287,6 +313,7 @@ class ScreenCaptureService : Service() {
             }
             Thread.sleep(200)
         }
+        Log.e(tag, "All capture attempts failed")
         return null
     }
 
@@ -296,24 +323,33 @@ class ScreenCaptureService : Service() {
             val buffer = planes[0].buffer
             val pixelStride = planes[0].pixelStride
             val rowStride = planes[0].rowStride
-            val rowPadding = rowStride - pixelStride * image.width
 
-            val widthWithPadding = image.width + rowPadding / pixelStride
-            val bitmap = Bitmap.createBitmap(
-                widthWithPadding,
-                image.height,
-                Bitmap.Config.ARGB_8888
-            )
-            bitmap.copyPixelsFromBuffer(buffer)
+            val width = image.width
+            val height = image.height
 
-            if (bitmap.width > image.width) {
-                // ✅ 修复：image.image.width → image.width
-                Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height).also {
-                    bitmap.recycle()
+            Log.d(tag, "imageToBitmap: width=$width, height=$height, pixelStride=$pixelStride, rowStride=$rowStride")
+
+            buffer.rewind()
+
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+
+            val rowBuffer = ByteArray(rowStride)
+            val pixels = IntArray(width * height)
+
+            for (row in 0 until height) {
+                buffer.get(rowBuffer, 0, rowStride)
+                for (col in 0 until width) {
+                    val idx = col * pixelStride
+                    val r = rowBuffer[idx].toInt() and 0xFF
+                    val g = rowBuffer[idx + 1].toInt() and 0xFF
+                    val b = rowBuffer[idx + 2].toInt() and 0xFF
+                    val a = rowBuffer[idx + 3].toInt() and 0xFF
+                    pixels[row * width + col] = (a shl 24) or (r shl 16) or (g shl 8) or b
                 }
-            } else {
-                bitmap
             }
+
+            bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+            bitmap
         } catch (e: Throwable) {
             Log.e(tag, "Image to bitmap failed", e)
             null
@@ -330,11 +366,16 @@ class ScreenCaptureService : Service() {
             outer@ for (y in 0 until height step sampleStep) {
                 for (x in 0 until width step sampleStep) {
                     val pixel = bitmap.getPixel(x, y)
-                    if (pixel and 0xFFFFFF != 0 && pixel ushr 24 > 10) {
+                    val rgb = pixel and 0xFFFFFF
+                    val alpha = pixel ushr 24
+                    if (rgb > 0x101010 && alpha > 10) {
                         hasNonBlank = true
                         break@outer
                     }
                 }
+            }
+            if (!hasNonBlank) {
+                Log.w(tag, "Bitmap appears blank (all dark/transparent)")
             }
             !hasNonBlank
         } catch (e: Throwable) {
@@ -358,7 +399,9 @@ class ScreenCaptureService : Service() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                Log.d(tag, "OCR starting, bitmap=${bitmap.width}x${bitmap.height}")
                 val text = manager.recognizeFromBitmap(bitmap)
+                Log.d(tag, "OCR result: '$text'")
                 bitmap.recycle()
 
                 if (text.isNotEmpty()) {
@@ -370,6 +413,8 @@ class ScreenCaptureService : Service() {
                     val analysisText = question?.analysis ?: ""
                     val isMatched = question != null
 
+                    Log.d(tag, "Search result: matched=$isMatched, question=${questionText.take(20)}")
+
                     sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
                         putExtra(FloatWindowService.EXTRA_QUESTION, questionText)
                         putExtra(FloatWindowService.EXTRA_ANSWER, answerText)
@@ -378,13 +423,13 @@ class ScreenCaptureService : Service() {
                     })
                 } else {
                     handler.post {
-                        Toast.makeText(this@ScreenCaptureService, R.string.ocr_no_text, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@ScreenCaptureService, "未识别到文字，请确保框选区域包含清晰的文字", Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (e: Throwable) {
                 Log.e(tag, "OCR failed", e)
                 handler.post {
-                    Toast.makeText(this@ScreenCaptureService, R.string.ocr_failed, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@ScreenCaptureService, "文字识别失败：${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -418,9 +463,11 @@ class ScreenCaptureService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+       ()
         releaseProjection()
         isRunning = false
         isInitializing = false
+        foregroundStarted = false
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
