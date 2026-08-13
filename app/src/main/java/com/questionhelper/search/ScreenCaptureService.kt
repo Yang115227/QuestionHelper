@@ -70,7 +70,7 @@ class ScreenCaptureService : Service() {
 
         fun start(context: Context, resultCode: Int, data: Intent) {
             val intent = Intent(context, ScreenCaptureService::class.java).apply {
-                putExtra("result_code", resultCode)
+                put putExtra("result_code", resultCode)
                 putExtra("result_data", data)
             }
             context.startForegroundService(intent)
@@ -122,7 +122,6 @@ class ScreenCaptureService : Service() {
                     captureAndSearch(rect)
                 } else if (!isInitialized) {
                     handler.post {
-                        // ✅ 修复：R.string.screenshot.screenshot_service_not_ready → R.string.screenshot_service_not_ready
                         Toast.makeText(this, R.string.screenshot_service_not_ready, Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -347,8 +346,11 @@ class ScreenCaptureService : Service() {
         val manager = QuestionApp.ocrManager
 
         if (!manager.isReady) {
-            Log.w(tag, "OCR not ready, maybe paddle models missing")
-            handler.post { Toast.makeText(this, R.string.ocr_not_initialized, Toast.LENGTH_LONG).show() }
+            val error = manager.initError ?: "未知错误"
+            Log.e(tag, "OCR 未就绪: $error")
+            handler.post {
+                Toast.makeText(this, "OCR 未初始化\n$error", Toast.LENGTH_LONG).show()
+            }
             bitmap.recycle()
             return
         }
