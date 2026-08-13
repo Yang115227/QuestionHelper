@@ -70,7 +70,7 @@ class ScreenCaptureService : Service() {
 
         fun start(context: Context, resultCode: Int, data: Intent) {
             val intent = Intent(context, ScreenCaptureService::class.java).apply {
-                put putExtra("result_code", resultCode)
+                putExtra("result_code", resultCode)
                 putExtra("result_data", data)
             }
             context.startForegroundService(intent)
