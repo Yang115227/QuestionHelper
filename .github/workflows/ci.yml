@@ -34,38 +34,42 @@ jobs:
 
       - name: Download Paddle Lite native libraries
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p app/libs app/src/main/jniLibs/arm64-v8a paddle-lite
 
-          # Paddle Lite v2.10 预编译库下载链接（PP-OCRv3 推荐版本）
           URL="https://github.com/PaddlePaddle/Paddle-Lite/releases/download/v2.10/inference_lite_lib.android.armv8.gcc.c++_shared.with_extra.with_cv.tar.gz"
 
-          echo "Downloading Paddle Lite from: $URL"
+          echo "Downloading from: $URL"
           if ! curl --fail-with-body -L -o paddle-lite.tar.gz "$URL"; then
-            echo "ERROR: Failed to download Paddle Lite from $URL"
-            echo "Please manually download inference_lite_lib.android.armv8.*.tar.gz"
-            echo "and extract PaddlePredictor.jar + libpaddle_lite_jni.so into the project."
+            echo "ERROR: Failed to download Paddle Lite"
             exit 1
           fi
 
-          echo "Extracting Paddle Lite..."
+          echo "Extracting..."
           tar -xzf paddle-lite.tar.gz --strip-components=1 -C paddle-lite
 
-          echo "Copying Paddle Lite files..."
+          echo "Copying files..."
           cp paddle-lite/java/jar/PaddlePredictor.jar app/libs/
           cp paddle-lite/java/so/libpaddle_lite_jni.so app/src/main/jniLibs/arm64-v8a/
           
-          # 部分版本 so 文件路径不同，兼容处理
+          # ✅ 复制 cxx 共享库（c++_shared 版本必需）
           if [ -f paddle-lite/cxx/lib/libpaddle_light_api_shared.so ]; then
             cp paddle-lite/cxx/lib/libpaddle_light_api_shared.so app/src/main/jniLibs/arm64-v8a/
           fi
+          
+          # ✅ 复制 libc++_shared.so（c++_shared 编译选项依赖）
+          if [ -f paddle-lite/cxx/lib/libc++_shared.so ]; then
+            cp paddle-lite/cxx/lib/libc++_shared.so app/src/main/jniLibs/arm64-v8a/
+          fi
 
-          echo "Paddle Lite files prepared:"
-          ls -la app/libs/PaddlePredictor.jar
+          echo "Verifying files in jniLibs:"
           ls -la app/src/main/jniLibs/arm64-v8a/
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+
+      - name: Clean build
+        run: ./gradlew clean --no-daemon
 
       - name: Build Debug APK
         if: github.event.inputs.build_type != 'release'
