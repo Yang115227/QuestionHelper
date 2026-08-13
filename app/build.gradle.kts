@@ -28,18 +28,33 @@ android {
 
     signingConfigs {
         create("release") {
-            val storeFilePath = System.getenv("STORE_FILE") ?: ""
-            val storePw = System.getenv("STORE_PASSWORD")
-            val keyAliasName = System.getenv("KEY_ALIAS")
-            val keyPw = System.getenv("KEY_PASSWORD")
+            // ✅ 修复：统一环境变量名，兼容 CI 和本地
+            val storeFilePath = System.getenv("SIGNING_STORE_FILE") 
+                ?: System.getenv("STORE_FILE") 
+                ?: "release.jks"
+            
+            // CI 中生成在 app/release.jks，本地可能用绝对路径
+            val resolvedStoreFile = if (storeFilePath == "release.jks") {
+                file("${project.projectDir}/release.jks")
+            } else {
+                file(storeFilePath)
+            }
 
-            if (storeFilePath.isNotEmpty() && storePw != null && keyAliasName != null && keyPw != null) {
-                storeFile = file(storeFilePath)
+            val storePw = System.getenv("SIGNING_STORE_PASSWORD") 
+                ?: System.getenv("STORE_PASSWORD")
+            val keyAliasName = System.getenv("SIGNING_KEY_ALIAS") 
+                ?: System.getenv("KEY_ALIAS")
+            val keyPw = System.getenv("SIGNING_KEY_PASSWORD") 
+                ?: System.getenv("KEY_PASSWORD")
+
+            // 只有当所有签名信息都存在时才配置 release 签名
+            if (resolvedStoreFile.exists() && storePw != null && keyAliasName != null && keyPw != null) {
+                storeFile = resolvedStoreFile
                 storePassword = storePw
                 keyAlias = keyAliasName
                 keyPassword = keyPw
             } else {
-                println("Warning: Release signing config not fully set, falling back to debug signing")
+                println("⚠️ Warning: Release signing config not fully set, falling back to debug signing")
             }
         }
     }
@@ -52,11 +67,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = if (signingConfigs.getByName("release").storeFile != null) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            // ✅ 安全获取 release signingConfig
+            signingConfig = signingConfigs.findByName("release")?.takeIf { 
+                it.storeFile != null && it.storeFile!!.exists() 
+            } ?: signingConfigs.getByName("debug")
         }
         debug {
             // Use default debug keystore
@@ -90,19 +104,31 @@ android {
     }
 }
 
-// ✅ 强制验证：PaddlePredictor.jar 必须存在且有效
-val paddleJar = file("libs/PaddlePredictor.jar")
-if (!paddleJar.exists()) {
-    throw GradleException(
-        "❌ PaddlePredictor.jar not found at ${paddleJar.absolutePath}\n" +
-        "Please commit the file to app/libs/ in the repository."
-    )
+// ✅ 修复：将 PaddlePredictor.jar 检查从配置阶段移到任务阶段，避免 CI 无文件时直接崩溃
+tasks.register("checkPaddleJar") {
+    doLast {
+        val paddleJar = file("libs/PaddlePredictor.jar")
+        if (!paddleJar.exists()) {
+            throw GradleException(
+                "❌ PaddlePredictor.jar not found at ${paddleJar.absolutePath}\n" +
+                "Please commit the file to app/libs/ in the repository."
+            )
+        }
+        if (paddleJar.length() < 1024) {
+            throw GradleException(
+                "❌ PaddlePredictor.jar is too small (${paddleJar.length()} bytes). " +
+                "The file may be corrupted."
+            )
+        }
+        println("✅ PaddlePredictor.jar verified: ${paddleJar.length()} bytes")
+    }
 }
-if (paddleJar.length() < 1024) {
-    throw GradleException(
-        "❌ PaddlePredictor.jar is too small (${paddleJar.length()} bytes). " +
-        "The file may be corrupted."
-    )
+
+// 让 preBuild 依赖此检查，仅在构建时执行而非配置阶段
+afterEvaluate {
+    tasks.named("preBuild").configure {
+        dependsOn("checkPaddleJar")
+    }
 }
 
 dependencies {
@@ -147,8 +173,13 @@ dependencies {
     }
     implementation("javax.xml.stream:stax-api:1.0-2")
 
-    // ✅ 强制引入 Paddle Lite JAR
-    implementation(files(paddleJar))
+    // Paddle Lite JAR（仅在文件存在时引入，避免 CI 配置阶段报错）
+    val paddleJar = file("libs/PaddlePredictor.jar")
+    if (paddleJar.exists()) {
+        implementation(files(paddleJar))
+    } else {
+        println("⚠️ Warning: PaddlePredictor.jar not found, skipping local dependency")
+    }
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
