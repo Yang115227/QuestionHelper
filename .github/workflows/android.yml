@@ -24,7 +24,6 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # 解码签名文件
       - name: Decode signing key
         if: github.event_name != 'pull_request'
         env:
@@ -43,7 +42,6 @@ jobs:
       - name: Build Release APK
         if: github.event_name != 'pull_request'
         env:
-          # ✅ 统一使用 SIGNING_* 前缀，与 build.gradle.kts 匹配
           SIGNING_STORE_FILE: release.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
