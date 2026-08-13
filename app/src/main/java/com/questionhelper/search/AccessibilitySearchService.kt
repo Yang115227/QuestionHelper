@@ -104,7 +104,7 @@ class AccessibilitySearchService : AccessibilityService() {
         try {
             val executor = Executors.newSingleThreadExecutor()
             val callbackClass = Class.forName("android.accessibilityservice.AccessibilityService\$TakeScreenshotCallback")
-            // ✅ 修复：显式指定 arrayOf 的元素类型为 Class<*>，避免类型推断失败
+            // ✅ 修复：显式指定 arrayOf 的元素类型为 Class<*>
             val paramTypes = arrayOf<Class<*>>(
                 Int::class.javaPrimitiveType!!,
                 java.util.concurrent.Executor::class.java,
@@ -113,7 +113,7 @@ class AccessibilitySearchService : AccessibilityService() {
             val method = AccessibilityService::class.java.getDeclaredMethod("takeScreenshot", *paramTypes)
             val proxy = java.lang.reflect.Proxy.newProxyInstance(
                 callbackClass.classLoader,
-                arrayOf<Class<*>>(callbackClass) // 同样显式指定类型
+                arrayOf<Class<*>>(callbackClass) // ✅ 同样显式指定类型
             ) { _, proxyMethod, args ->
                 when (proxyMethod.name) {
                     "onSuccess" -> {
