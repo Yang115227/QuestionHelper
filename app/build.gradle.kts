@@ -78,17 +78,11 @@ android {
         noCompress += listOf("tflite", "lite", "nb", "txt")
     }
 
-    // ✅ 修复：强制排除 stub，避免与 JAR 类冲突
+    // ✅ 修复：简化 sourceSets，只在 JAR 缺失时添加 stub
     sourceSets["main"].java {
-        val paddleJar = file("libs/PaddlePredictor.jar")
-        val stubDir = file("src/stub/java")
-        if (!paddleJar.exists()) {
-            srcDir(stubDir)
-            println("⚠️ PaddlePredictor.jar not found, using stub classes")
-        } else {
-            println("✅ PaddlePredictor.jar found, excluding stub classes")
-            // 显式排除 stub 目录，防止增量构建缓存导致冲突
-            setSrcDirs(srcDirs.filter { !it.absolutePath.contains("src/stub") })
+        if (!file("libs/PaddlePredictor.jar").exists()) {
+            srcDir("src/stub/java")
+            println("WARNING: PaddlePredictor.jar not found, using stub classes")
         }
     }
 
