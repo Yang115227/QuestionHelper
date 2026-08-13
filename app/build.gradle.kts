@@ -28,7 +28,6 @@ android {
 
     signingConfigs {
         create("release") {
-            // ✅ 修复 1：统一环境变量名，兼容 CI (SIGNING_*) 和本地 (STORE_FILE)
             val storeFilePath = System.getenv("SIGNING_STORE_FILE")
                 ?: System.getenv("STORE_FILE")
                 ?: ""
@@ -40,15 +39,12 @@ android {
             val keyPw = System.getenv("SIGNING_KEY_PASSWORD")
                 ?: System.getenv("KEY_PASSWORD")
 
-            // ✅ 修复 2：只有当所有签名信息都存在且路径非空时才配置
             if (storeFilePath.isNotBlank() && storePw != null && keyAliasName != null && keyPw != null) {
                 val resolvedFile = if (storeFilePath == "release.jks") {
-                    // CI 中生成在 app/release.jks，使用相对项目目录的路径
                     file("${project.projectDir}/release.jks")
                 } else {
                     file(storeFilePath)
                 }
-                // 二次校验文件存在
                 if (resolvedFile.exists()) {
                     storeFile = resolvedFile
                     storePassword = storePw
@@ -71,7 +67,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // ✅ 修复 3：安全获取 release signingConfig，避免 null storeFile
             signingConfig = signingConfigs.findByName("release")?.takeIf {
                 it.storeFile != null && it.storeFile!!.exists()
             } ?: signingConfigs.getByName("debug")
@@ -108,7 +103,6 @@ android {
     }
 }
 
-// ✅ 修复 4：将 PaddlePredictor.jar 检查从配置阶段移到任务阶段
 tasks.register("checkPaddleJar") {
     doLast {
         val paddleJar = file("libs/PaddlePredictor.jar")
@@ -176,7 +170,6 @@ dependencies {
     }
     implementation("javax.xml.stream:stax-api:1.0-2")
 
-    // Paddle Lite JAR（仅在文件存在时引入）
     val paddleJar = file("libs/PaddlePredictor.jar")
     if (paddleJar.exists()) {
         implementation(files(paddleJar))
