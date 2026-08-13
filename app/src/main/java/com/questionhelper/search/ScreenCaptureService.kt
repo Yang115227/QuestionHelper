@@ -307,7 +307,8 @@ class ScreenCaptureService : Service() {
             bitmap.copyPixelsFromBuffer(buffer)
 
             if (bitmap.width > image.width) {
-                Bitmap.createBitmap(bitmap, 0, 0, image.image.width, image.image.height).also {
+                // ✅ 修复：image.image.width → image.width
+                Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height).also {
                     bitmap.recycle()
                 }
             } else {
@@ -369,7 +370,6 @@ class ScreenCaptureService : Service() {
                     val analysisText = question?.analysis ?: ""
                     val isMatched = question != null
 
-                    // ✅ 改为发送广播显示悬浮结果窗
                     sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
                         putExtra(FloatWindowService.EXTRA_QUESTION, questionText)
                         putExtra(FloatWindowService.EXTRA_ANSWER, answerText)
