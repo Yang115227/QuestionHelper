@@ -2,19 +2,12 @@ package com.questionhelper.ocr
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Matrix
-import android.graphics.Paint
 import android.util.Log
 import com.baidu.paddle.lite.MobileConfig
 import com.baidu.paddle.lite.PaddlePredictor
 import com.baidu.paddle.lite.PowerMode
 import com.baidu.paddle.lite.Tensor
 import java.io.*
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.util.*
 import kotlin.math.*
 
 class OCRPredictor(context: Context, assetPath: String) {
@@ -26,42 +19,48 @@ class OCRPredictor(context: Context, assetPath: String) {
     private val context: Context = context.applicationContext
     private val assetPath: String = assetPath
 
-    // 模型配置参数
     private val detInputShape = intArrayOf(1, 3, 480, 480)
     private val recInputShape = intArrayOf(1, 3, 48, 320)
-    private val clsInputShape = intArrayOf(1, 3, 48, 192)
     private val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
     private val std = floatArrayOf(0.229f, 0.224f, 0.225f)
 
     init {
+        Log.d(tag, "OCRPredictor 开始初始化")
         loadModels()
         loadLabels()
+        Log.d(tag, "OCRPredictor 初始化完成")
     }
 
     private fun loadModels() {
-        try {
-            detPredictor = loadModel("$assetPath/ch_PP-OCRv3_det_infer_opt.nb")
-            recPredictor = loadModel("$assetPath/ch_PP-OCRv3_rec_infer_opt.nb")
-            clsPredictor = loadModel("$assetPath/ch_ppocr_mobile_v2.0_cls_infer_opt.nb")
-            Log.d(tag, "All models loaded")
-        } catch (e: Exception) {
-            Log.e(tag, "Failed to load models", e)
-            throw RuntimeException("模型加载失败: ${e.message}")
-        }
+        detPredictor = loadModel("det", "$assetPath/ch_PP-OCRv3_det_infer_opt.nb")
+        recPredictor = loadModel("rec", "$assetPath/ch_PP-OCRv3_rec_infer_opt.nb")
+        clsPredictor = loadModel("cls", "$assetPath/ch_ppocr_mobile_v2.0_cls_infer_opt.nb")
     }
 
-    private fun loadModel(modelName: String): PaddlePredictor {
+    private fun loadModel(name: String, modelName: String): PaddlePredictor {
+        Log.d(tag, "[$name] 开始加载模型: $modelName")
         val modelFile = copyAssetToCache(modelName)
+        Log.d(tag, "[$name] 模型缓存路径: ${modelFile.absolutePath}, 大小=${modelFile.length()} bytes")
+
         val config = MobileConfig()
         config.setModelFromFile(modelFile.absolutePath)
         config.setPowerMode(PowerMode.LITE_POWER_HIGH)
         config.setThreads(4)
-        return PaddlePredictor.createPaddlePredictor(config)
+
+        Log.d(tag, "[$name] 调用 createPaddlePredictor...")
+        val predictor = PaddlePredictor.createPaddlePredictor(config)
+        if (predictor == null) {
+            throw RuntimeException("[$name] createPaddlePredictor 返回 null！模型文件可能损坏或与 Paddle Lite 版本不匹配")
+        }
+        Log.d(tag, "[$name] 模型加载成功")
+        return predictor
     }
 
     private fun copyAssetToCache(assetName: String): File {
         val outFile = File(context.cacheDir, assetName.replace("/", "_"))
-        if (outFile.exists()) return outFile
+        if (outFile.exists()) {
+            return outFile
+        }
         outFile.parentFile?.mkdirs()
         context.assets.open(assetName).use { input ->
             FileOutputStream(outFile).use { output ->
@@ -76,38 +75,41 @@ class OCRPredictor(context: Context, assetPath: String) {
             context.assets.open("$assetPath/ppocr_keys_v1.txt").bufferedReader().useLines { lines ->
                 lines.forEach { wordLabels.add(it) }
             }
-            Log.d(tag, "Loaded ${wordLabels.size} labels")
+            Log.d(tag, "标签加载完成，共 ${wordLabels.size} 个")
         } catch (e: Exception) {
-            Log.e(tag, "Failed to load labels", e)
+            Log.e(tag, "标签加载失败", e)
         }
     }
 
     fun runOcr(bitmap: Bitmap): List<OcrResult> {
-        if (detPredictor == null || recPredictor == null) return emptyList()
+        val det = detPredictor ?: return emptyList()
+        val rec = recPredictor ?: return emptyList()
 
-        // 1. 文本检测
-        val boxes = runDetection(bitmap)
+        val boxes = runDetection(bitmap, det)
         if (boxes.isEmpty()) return emptyList()
 
-        // 2. 方向分类（可选）
-        // 3. 文本识别
         val results = mutableListOf<OcrResult>()
         for (box in boxes) {
             val crop = cropBox(bitmap, box)
-            val text = runRecognition(crop)
+            val text = runRecognition(crop, rec)
             if (text.isNotBlank()) {
                 results.add(OcrResult(text, box))
             }
             crop.recycle()
         }
-
-        // 按 Y 坐标排序（从上到下）
         return results.sortedBy { it.box.minOf { p -> p.y } }
     }
 
-    private fun runDetection(bitmap: Bitmap): List<List<Point>> {
-        val inputTensor = preprocessDet(bitmap)
-        val predictor = detPredictor ?: return emptyList()
+    private fun runDetection(bitmap: Bitmap, predictor: PaddlePredictor): List<List<Point>> {
+        val h = detInputShape[2]
+        val w = detInputShape[3]
+        val scaledBitmap = Bitmap.createScaledBitmap(bitmap, w, h, true)
+        val inputData = bitmapToFloatArray(scaledBitmap, h, w)
+        scaledBitmap.recycle()
+
+        val inputTensor = predictor.getInput(0)
+        inputTensor.resize(detInputShape.map { it.toLong() }.toLongArray())
+        inputTensor.setData(inputData)
         predictor.run()
 
         val outputTensor = predictor.getOutput(0)
@@ -115,19 +117,6 @@ class OCRPredictor(context: Context, assetPath: String) {
         val outputData = outputTensor.getFloatData()
 
         return postprocessDet(outputData, outputShape, bitmap.width, bitmap.height)
-    }
-
-    private fun preprocessDet(bitmap: Bitmap): Tensor {
-        val h = detInputShape[2]
-        val w = detInputShape[3]
-        val scaledBitmap = scaleBitmap(bitmap, w, h)
-        val inputData = bitmapToFloatArray(scaledBitmap, h, w, mean, std)
-        scaledBitmap.recycle()
-
-        val inputTensor = detPredictor!!.getInput(0)
-        inputTensor.resize(detInputShape.map { it.toLong() }.toLongArray())
-        inputTensor.setData(inputData)
-        return inputTensor
     }
 
     private fun postprocessDet(
@@ -153,25 +142,22 @@ class OCRPredictor(context: Context, assetPath: String) {
                     (p.y * ratioH).toInt().coerceIn(0, srcHeight - 1)
                 )
             }
-        }.filter { box ->
-            val area = polygonArea(box)
-            area > 10
-        }
+        }.filter { polygonArea(it) > 10 }
     }
 
-    private fun runRecognition(bitmap: Bitmap): String {
+    private fun runRecognition(bitmap: Bitmap, predictor: PaddlePredictor): String {
         val h = recInputShape[2]
         val w = recInputShape[3]
-        val scaledBitmap = scaleBitmap(bitmap, w, h)
-        val inputData = bitmapToFloatArray(scaledBitmap, h, w, mean, std)
+        val scaledBitmap = Bitmap.createScaledBitmap(bitmap, w, h, true)
+        val inputData = bitmapToFloatArray(scaledBitmap, h, w)
         scaledBitmap.recycle()
 
-        val inputTensor = recPredictor!!.getInput(0)
+        val inputTensor = predictor.getInput(0)
         inputTensor.resize(recInputShape.map { it.toLong() }.toLongArray())
         inputTensor.setData(inputData)
-        recPredictor!!.run()
+        predictor.run()
 
-        val outputTensor = recPredictor!!.getOutput(0)
+        val outputTensor = predictor.getOutput(0)
         val outputData = outputTensor.getFloatData()
         val outputShape = outputTensor.shape()
 
@@ -212,14 +198,7 @@ class OCRPredictor(context: Context, assetPath: String) {
         return Bitmap.createBitmap(bitmap, left, top, width, height)
     }
 
-    private fun scaleBitmap(src: Bitmap, dstW: Int, dstH: Int): Bitmap {
-        return Bitmap.createScaledBitmap(src, dstW, dstH, true)
-    }
-
-    private fun bitmapToFloatArray(
-        bitmap: Bitmap, h: Int, w: Int,
-        mean: FloatArray, std: FloatArray
-    ): FloatArray {
+    private fun bitmapToFloatArray(bitmap: Bitmap, h: Int, w: Int): FloatArray {
         val pixels = IntArray(h * w)
         bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
         val floatValues = FloatArray(3 * h * w)
@@ -265,8 +244,7 @@ class OCRPredictor(context: Context, assetPath: String) {
                     }
 
                     if (contour.size >= 10) {
-                        val rect = minAreaRect(contour)
-                        boxes.add(rect)
+                        boxes.add(minAreaRect(contour))
                     }
                 }
             }
@@ -277,8 +255,7 @@ class OCRPredictor(context: Context, assetPath: String) {
     private fun minAreaRect(points: List<Point>): List<Point> {
         val centerX = points.map { it.x }.average()
         val centerY = points.map { it.y }.average()
-        val sorted = points.sortedBy { atan2((it.y - centerY), (it.x - centerX)) }
-        return sorted
+        return points.sortedBy { atan2((it.y - centerY), (it.x - centerX)) }
     }
 
     private fun polygonArea(points: List<Point>): Double {
