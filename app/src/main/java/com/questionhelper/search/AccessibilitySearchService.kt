@@ -104,6 +104,7 @@ class AccessibilitySearchService : AccessibilityService() {
         try {
             val executor = Executors.newSingleThreadExecutor()
             val callbackClass = Class.forName("android.accessibilityservice.AccessibilityService\$TakeScreenshotCallback")
+            // ✅ 修复：arrayOf>() → arrayOf<Class<*>>()
             val paramTypes = arrayOf<Class<*>>(
                 Int::class.javaPrimitiveType!!,
                 java.util.concurrent.Executor::class.java,
@@ -173,9 +174,6 @@ class AccessibilitySearchService : AccessibilityService() {
         }
     }
 
-    /**
-     * 释放 ScreenshotResult，避免 Android 14+ 上资源泄漏导致后续截图失败。
-     */
     private fun releaseScreenshotResult(result: Any?) {
         if (result == null) return
         try {
@@ -188,13 +186,6 @@ class AccessibilitySearchService : AccessibilityService() {
         }
     }
 
-    /**
-     * 增强版 Bitmap 提取，支持：
-     * 1. 直接返回 Bitmap（某些 ROM）
-     * 2. getBitmap() 方法
-     * 3. Android 14+ 的 getHardwareBuffer() + Bitmap.wrapHardwareBuffer()
-     * 4. 遍历所有方法和字段兜底
-     */
     private fun extractBitmapRobust(result: Any?): Bitmap? {
         if (result == null) return null
         if (result is Bitmap) return result
@@ -202,7 +193,6 @@ class AccessibilitySearchService : AccessibilityService() {
         val clazz = result.javaClass
         Log.d(TAG, "Screenshot result class: ${clazz.name}")
 
-        // 1. 尝试 public getBitmap()
         try {
             val method = clazz.getMethod("getBitmap")
             method.invoke(result)?.let {
@@ -210,7 +200,6 @@ class AccessibilitySearchService : AccessibilityService() {
             }
         } catch (_: Throwable) {}
 
-        // 2. 尝试 declared getBitmap()
         try {
             val method = clazz.getDeclaredMethod("getBitmap")
             method.isAccessible = true
@@ -219,7 +208,6 @@ class AccessibilitySearchService : AccessibilityService() {
             }
         } catch (_: Throwable) {}
 
-        // 3. Android 14+：尝试 getHardwareBuffer()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             try {
                 val method = clazz.getMethod("getHardwareBuffer")
@@ -236,7 +224,6 @@ class AccessibilitySearchService : AccessibilityService() {
             }
         }
 
-        // 4. 遍历所有方法，找返回 Bitmap 或 HardwareBuffer 的无参方法
         try {
             var currentClass: Class<*>? = clazz
             while (currentClass != null && currentClass != Any::class.java) {
@@ -266,7 +253,6 @@ class AccessibilitySearchService : AccessibilityService() {
             Log.w(TAG, "Scan methods failed", e)
         }
 
-        // 5. 遍历所有字段，找 Bitmap 或 HardwareBuffer 类型
         try {
             var currentClass: Class<*>? = clazz
             while (currentClass != null && currentClass != Any::class.java) {
@@ -294,7 +280,6 @@ class AccessibilitySearchService : AccessibilityService() {
             Log.w(TAG, "Scan fields failed", e)
         }
 
-        // 6. 打印调试信息
         try {
             val methods = clazz.declaredMethods.map { "${it.name}:${it.returnType.simpleName}" }
             val fields = clazz.declaredFields.map { "${it.name}:${it.type.simpleName}" }
