@@ -78,14 +78,24 @@ android {
         noCompress += listOf("tflite", "lite", "nb", "txt")
     }
 
+    // ✅ 修复：强制排除 stub，避免与 JAR 类冲突
     sourceSets["main"].java {
-        // 没有 PaddlePredictor.jar 时使用 stub 类编译，但运行时 OCR 不可用
-        if (!file("libs/PaddlePredictor.jar").exists()) {
-            srcDir("src/stub/java")
+        val paddleJar = file("libs/PaddlePredictor.jar")
+        val stubDir = file("src/stub/java")
+        if (!paddleJar.exists()) {
+            srcDir(stubDir)
+            println("⚠️ PaddlePredictor.jar not found, using stub classes")
+        } else {
+            println("✅ PaddlePredictor.jar found, excluding stub classes")
+            // 显式排除 stub 目录，防止增量构建缓存导致冲突
+            setSrcDirs(srcDirs.filter { !it.absolutePath.contains("src/stub") })
         }
     }
 
     packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "/META-INF/INDEX.LIST"
@@ -107,21 +117,17 @@ dependencies {
     implementation(libs.androidx.navigation)
     implementation(libs.coroutines.android)
 
-    // Android Material Components
     implementation("com.google.android.material:material:1.12.0")
 
-    // CameraX
     implementation(libs.camera.core)
     implementation(libs.camera.camera2)
     implementation(libs.camera.lifecycle)
     implementation(libs.camera.view)
 
-    // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
-    // POI (Excel 解析)
     implementation(libs.poi) {
         exclude(group = "org.apache.xmlbeans", module = "xmlbeans")
         exclude(group = "commons-codec", module = "commons-codec")
