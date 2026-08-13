@@ -26,7 +26,6 @@ import androidx.core.app.NotificationCompat
 import com.questionhelper.QuestionApp
 import com.questionhelper.R
 import com.questionhelper.data.QuestionRepository
-import com.questionhelper.ocr.OcrManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -64,17 +63,11 @@ class ScreenCaptureService : Service() {
         var lastError: String? = null
             private set
 
-        /**
-         * 供外部（如 MainActivity 广播接收器）标记授权已失效
-         */
         fun markProjectionStopped() {
             isInitialized = false
             isInitializing = false
         }
 
-        /**
-         * 启动服务（带参数）
-         */
         fun start(context: Context, resultCode: Int, data: Intent) {
             val intent = Intent(context, ScreenCaptureService::class.java).apply {
                 putExtra("result_code", resultCode)
@@ -83,9 +76,6 @@ class ScreenCaptureService : Service() {
             context.startForegroundService(intent)
         }
 
-        /**
-         * 停止服务
-         */
         fun stop(context: Context) {
             context.stopService(Intent(context, ScreenCaptureService::class.java))
         }
@@ -114,7 +104,6 @@ class ScreenCaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) {
-            // 服务被系统重启，但无参数 —— 无法恢复 MediaProjection
             Log.w(tag, "Service restarted by system without intent, stopping self")
             stopSelf()
             return START_NOT_STICKY
@@ -140,7 +129,6 @@ class ScreenCaptureService : Service() {
             }
         }
 
-        // MediaProjection 授权成功时 resultCode = RESULT_OK = -1，取消时为 0
         val resultCode = intent.getIntExtra("result_code", android.app.Activity.RESULT_CANCELED)
         val data = intent.getParcelableExtra<Intent>("result_data")
 
@@ -151,7 +139,6 @@ class ScreenCaptureService : Service() {
             return START_NOT_STICKY
         }
 
-        // 如果已经初始化，先释放旧的
         releaseProjection()
         isInitializing = true
         lastError = null
@@ -183,9 +170,6 @@ class ScreenCaptureService : Service() {
         })
     }
 
-    /**
-     * 初始化 MediaProjection 和 VirtualDisplay
-     */
     private fun initializeProjection(resultCode: Int, data: Intent): Boolean {
         return try {
             val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -197,19 +181,16 @@ class ScreenCaptureService : Service() {
                 return false
             }
 
-            // 监听 MediaProjection 停止事件（用户撤销授权或超时）
             mediaProjection?.registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() {
                     Log.w(tag, "MediaProjection stopped by system")
                     isInitialized = false
                     isInitializing = false
                     releaseProjection()
-                    // 通知 MainActivity 重新申请权限
                     sendBroadcast(Intent(ACTION_PROJECTION_STOPPED))
                 }
             }, handler)
 
-            // 创建 ImageReader（使用真实屏幕尺寸）
             imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2)
             if (imageReader == null) {
                 lastError = getString(R.string.screen_capture_image_reader_null)
@@ -234,9 +215,6 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    /**
-     * 截图并按区域裁剪，然后识别搜索
-     */
     private fun captureAndSearch(rect: Rect) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -247,7 +225,6 @@ class ScreenCaptureService : Service() {
                     return@launch
                 }
 
-                // 将选区坐标限制在截图范围内
                 val safeRect = Rect(
                     rect.left.coerceIn(0, bitmap.width),
                     rect.top.coerceIn(0, bitmap.height),
@@ -282,9 +259,6 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    /**
-     * 获取最新一帧截图，带重试
-     */
     private fun captureScreen(): Bitmap? {
         if (!isInitialized || imageReader == null) {
             Log.w(tag, "Capture called but not initialized")
@@ -316,18 +290,14 @@ class ScreenCaptureService : Service() {
         return null
     }
 
-    /**
-     * 将 ImageReader 获取到的 Image 转换为 Bitmap
-     */
     private fun imageToBitmap(image: Image): Bitmap? {
         return try {
-            val planes = image.planes
+            val planes = image.pl.planes
             val buffer = planes[0].buffer
             val pixelStride = planes[0].pixelStride
             val rowStride = planes[0].rowStride
             val rowPadding = rowStride - pixelStride * image.width
 
-            // 创建 Bitmap 时考虑 rowPadding
             val widthWithPadding = image.width + rowPadding / pixelStride
             val bitmap = Bitmap.createBitmap(
                 widthWithPadding,
@@ -336,7 +306,6 @@ class ScreenCaptureService : Service() {
             )
             bitmap.copyPixelsFromBuffer(buffer)
 
-            // 如果宽度有 padding，裁剪回实际宽度
             if (bitmap.width > image.width) {
                 Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height).also {
                     bitmap.recycle()
@@ -350,9 +319,6 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    /**
-     * 简单判断 Bitmap 是否全黑或全透明
-     */
     private fun isBlankBitmap(bitmap: Bitmap): Boolean {
         return try {
             val width = bitmap.width
@@ -377,20 +343,12 @@ class ScreenCaptureService : Service() {
     }
 
     private fun processBitmap(bitmap: Bitmap) {
-        val manager = try {
-            OcrManager(this)
-        } catch (e: Throwable) {
-            Log.e(tag, "OCR init failed", e)
-            handler.post { Toast.makeText(this, R.string.ocr_not_initialized, Toast.LENGTH_SHORT).show() }
-            bitmap.recycle()
-            return
-        }
+        val manager = QuestionApp.ocrManager
 
         if (!manager.isReady) {
-            Log.w(tag, "OCR not ready, maybe paddle models missing")
+            Log.w(tag, "OCR not ready, maybe models missing")
             handler.post { Toast.makeText(this, R.string.ocr_not_initialized, Toast.LENGTH_LONG).show() }
             bitmap.recycle()
-            manager.close()
             return
         }
 
@@ -398,7 +356,6 @@ class ScreenCaptureService : Service() {
             try {
                 val text = manager.recognizeFromBitmap(bitmap)
                 bitmap.recycle()
-                manager.close()
 
                 if (text.isNotEmpty()) {
                     val repo = QuestionRepository(QuestionApp.database.questionDao())
@@ -421,9 +378,6 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    /**
-     * 释放所有资源
-     */
     private fun releaseProjection() {
         try {
             virtualDisplay?.release()
@@ -458,8 +412,6 @@ class ScreenCaptureService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    // ========== 前台服务通知 ==========
 
     private fun startForeground() {
         val channelId = "screen_capture"
