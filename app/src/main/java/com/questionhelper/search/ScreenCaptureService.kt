@@ -463,7 +463,6 @@ class ScreenCaptureService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-       ()
         releaseProjection()
         isRunning = false
         isInitializing = false
