@@ -95,14 +95,13 @@ val paddleJar = file("libs/PaddlePredictor.jar")
 if (!paddleJar.exists()) {
     throw GradleException(
         "❌ PaddlePredictor.jar not found at ${paddleJar.absolutePath}\n" +
-        "Please ensure the CI download step succeeded, " +
-        "or manually place the JAR in app/libs/"
+        "Please commit the file to app/libs/ in the repository."
     )
 }
 if (paddleJar.length() < 1024) {
     throw GradleException(
         "❌ PaddlePredictor.jar is too small (${paddleJar.length()} bytes). " +
-        "The file may be corrupted (possibly an HTML error page instead of the actual JAR)."
+        "The file may be corrupted."
     )
 }
 
@@ -148,7 +147,7 @@ dependencies {
     }
     implementation("javax.xml.stream:stax-api:1.0-2")
 
-    // ✅ 强制引入 Paddle Lite JAR（不再条件判断）
+    // ✅ 强制引入 Paddle Lite JAR
     implementation(files(paddleJar))
 
     testImplementation(libs.junit)
