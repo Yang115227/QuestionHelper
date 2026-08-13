@@ -78,14 +78,6 @@ android {
         noCompress += listOf("tflite", "lite", "nb", "txt")
     }
 
-    // ✅ 修复：简化 sourceSets，只在 JAR 缺失时添加 stub
-    sourceSets["main"].java {
-        if (!file("libs/PaddlePredictor.jar").exists()) {
-            srcDir("src/stub/java")
-            println("WARNING: PaddlePredictor.jar not found, using stub classes")
-        }
-    }
-
     packaging {
         jniLibs {
             useLegacyPackaging = true
@@ -96,6 +88,22 @@ android {
             excludes += "/META-INF/DEPENDENCIES"
         }
     }
+}
+
+// ✅ 强制验证：PaddlePredictor.jar 必须存在且有效
+val paddleJar = file("libs/PaddlePredictor.jar")
+if (!paddleJar.exists()) {
+    throw GradleException(
+        "❌ PaddlePredictor.jar not found at ${paddleJar.absolutePath}\n" +
+        "Please ensure the CI download step succeeded, " +
+        "or manually place the JAR in app/libs/"
+    )
+}
+if (paddleJar.length() < 1024) {
+    throw GradleException(
+        "❌ PaddlePredictor.jar is too small (${paddleJar.length()} bytes). " +
+        "The file may be corrupted (possibly an HTML error page instead of the actual JAR)."
+    )
 }
 
 dependencies {
@@ -140,11 +148,8 @@ dependencies {
     }
     implementation("javax.xml.stream:stax-api:1.0-2")
 
-    // Paddle Lite OCR
-    val paddleJar = file("libs/PaddlePredictor.jar")
-    if (paddleJar.exists()) {
-        implementation(files(paddleJar))
-    }
+    // ✅ 强制引入 Paddle Lite JAR（不再条件判断）
+    implementation(files(paddleJar))
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
