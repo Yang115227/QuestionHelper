@@ -24,7 +24,7 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # ✅ 修复：解码签名文件到正确路径，并设置环境变量给 Gradle
+      # 解码签名文件
       - name: Decode signing key
         if: github.event_name != 'pull_request'
         env:
@@ -32,20 +32,19 @@ jobs:
         run: |
           if [ -n "$SIGNING_STORE_FILE_BASE64" ]; then
             echo "$SIGNING_STORE_FILE_BASE64" | base64 -d > app/release.jks
-            echo "SIGNING_STORE_FILE=release.jks" >> $GITHUB_ENV
             echo "✅ Signing key decoded to app/release.jks"
           else
-            echo "⚠️ No SIGNING_STORE_FILE secret found, will use debug signing"
+            echo "⚠️ No SIGNING_STORE_FILE secret found"
           fi
 
-      # ✅ 修复：统一环境变量名，与 build.gradle.kts 匹配
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Build Release APK
         if: github.event_name != 'pull_request'
         env:
-          SIGNING_STORE_FILE: ${{ env.SIGNING_STORE_FILE }}
+          # ✅ 统一使用 SIGNING_* 前缀，与 build.gradle.kts 匹配
+          SIGNING_STORE_FILE: release.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
