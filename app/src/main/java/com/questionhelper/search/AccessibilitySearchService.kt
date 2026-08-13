@@ -104,6 +104,7 @@ class AccessibilitySearchService : AccessibilityService() {
         try {
             val executor = Executors.newSingleThreadExecutor()
             val callbackClass = Class.forName("android.accessibilityservice.AccessibilityService\$TakeScreenshotCallback")
+            // ✅ 修复：arrayOf>() → arrayOf<Class<*>>()
             val paramTypes = arrayOf<Class<*>>(
                 Int::class.javaPrimitiveType!!,
                 java.util.concurrent.Executor::class.java,
@@ -350,7 +351,6 @@ class AccessibilitySearchService : AccessibilityService() {
                     val analysisText = question?.analysis ?: ""
                     val isMatched = question != null
 
-                    // ✅ 改为发送广播显示悬浮结果窗
                     sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
                         putExtra(FloatWindowService.EXTRA_QUESTION, questionText)
                         putExtra(FloatWindowService.EXTRA_ANSWER, answerText)
