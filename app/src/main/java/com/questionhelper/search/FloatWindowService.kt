@@ -29,15 +29,12 @@ class FloatWindowService : Service() {
     private lateinit var windowManager: WindowManager
     private var floatBall: View? = null
     private var cropView: CropOverlayView? = null
+    private var resultView: FloatResultView? = null
     private var isShowingCrop = false
     private lateinit var prefs: SharedPreferences
     private val handler = Handler(Looper.getMainLooper())
     private var receiverRegistered = false
 
-    /**
-     * 标记是否正在等待录屏服务初始化完成。
-     * 用于解决：授权弹窗后用户立刻点击悬浮球，此时服务尚未初始化导致重复弹出选择对话框。
-     */
     @Volatile
     private var waitingScreenCapture = false
 
@@ -47,6 +44,13 @@ class FloatWindowService : Service() {
         private const val KEY_CROP_RECT = "crop_rect"
         private const val CHANNEL_ID = "float_window"
         private const val NOTIFICATION_ID = 1002
+
+        // 广播 Action：显示搜索结果
+        const val ACTION_SHOW_RESULT = "com.questionhelper.SHOW_RESULT"
+        const val EXTRA_QUESTION = "question"
+        const val EXTRA_ANSWER = "answer"
+        const val EXTRA_ANALYSIS = "analysis"
+        const val EXTRA_MATCHED = "matched"
 
         fun checkPermission(context: Context): Boolean {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -88,6 +92,16 @@ class FloatWindowService : Service() {
                         handler.post { Toast.makeText(context, error, Toast.LENGTH_LONG).show() }
                     }
                 }
+                ACTION_SHOW_RESULT -> {
+                    val question = intent.getStringExtra(EXTRA_QUESTION) ?: ""
+                    val answer = intent.getStringExtra(EXTRA_ANSWER) ?: ""
+                    val analysis = intent.getStringExtra(EXTRA_ANALYSIS) ?: ""
+                    val matched = intent.getBooleanExtra(EXTRA_MATCHED, false)
+                    Log.d(TAG, "Show result: matched=$matched")
+                    handler.post {
+                        showResult(question, answer, analysis, matched)
+                    }
+                }
             }
         }
     }
@@ -113,6 +127,7 @@ class FloatWindowService : Service() {
             val filter = IntentFilter().apply {
                 addAction(ScreenCaptureService.ACTION_PROJECTION_READY)
                 addAction(ScreenCaptureService.ACTION_PROJECTION_STOPPED)
+                addAction(ACTION_SHOW_RESULT)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 registerReceiver(serviceStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -192,12 +207,10 @@ class FloatWindowService : Service() {
         val hasAccessibility = isAccessibilityServiceEnabled()
 
         when {
-            // 录屏服务正在初始化中，提示稍后再试
             isScreenCaptureInitializing && !hasAccessibility -> {
                 Toast.makeText(this, R.string.screenshot_service_initializing, Toast.LENGTH_SHORT).show()
                 return
             }
-            // 录屏服务启动中但尚未就绪，可能是用户点击太快，延迟重试
             hasScreenCapture && !ScreenCaptureService.isInitialized -> {
                 Toast.makeText(this, R.string.screenshot_service_initializing, Toast.LENGTH_SHORT).show()
                 handler.postDelayed({
@@ -209,7 +222,6 @@ class FloatWindowService : Service() {
                 }, 800)
                 return
             }
-            // 没有任何截图能力，提示选择方式
             !hasScreenCapture && !hasAccessibility -> {
                 Toast.makeText(this, R.string.float_select_capture_method, Toast.LENGTH_SHORT).show()
                 val intent = Intent(this, MainActivity::class.java).apply {
@@ -241,6 +253,7 @@ class FloatWindowService : Service() {
         if (isShowingCrop) return
         isShowingCrop = true
         floatBall?.visibility = View.GONE
+        resultView?.dismiss() // 隐藏之前的结果窗
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -250,8 +263,8 @@ class FloatWindowService : Service() {
             else
                 WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         )
 
@@ -291,6 +304,16 @@ class FloatWindowService : Service() {
         isShowingCrop = false
         removeCropViewOnly()
         floatBall?.visibility = View.VISIBLE
+    }
+
+    /**
+     * 显示搜索结果悬浮窗
+     */
+    fun showResult(question: String, answer: String, analysis: String, isMatched: Boolean) {
+        if (resultView == null) {
+            resultView = FloatResultView(this)
+        }
+        resultView?.show(question, answer, analysis, isMatched)
     }
 
     private fun captureAndSearch(rect: Rect) {
@@ -379,6 +402,7 @@ class FloatWindowService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         hideCropView()
+        resultView?.dismiss()
         floatBall?.let {
             try { windowManager.removeView(it) } catch (_: Exception) {}
             floatBall = null
