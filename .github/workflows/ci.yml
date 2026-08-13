@@ -34,18 +34,39 @@ jobs:
 
       - name: Download Paddle Lite native libraries
         run: |
+          set -e
           mkdir -p app/libs app/src/main/jniLibs/arm64-v8a paddle-lite
-          curl -L -o paddle-lite.tar.gz \
-            https://github.com/PaddlePaddle/Paddle-Lite/releases/download/v2.10/inference_lite_lib.android.armv8.gcc.c++_shared.with_extra.with_cv.tar.gz
+
+          # Paddle Lite v2.10 预编译库下载链接（PP-OCRv3 推荐版本）
+          URL="https://github.com/PaddlePaddle/Paddle-Lite/releases/download/v2.10/inference_lite_lib.android.armv8.gcc.c++_shared.with_extra.with_cv.tar.gz"
+
+          echo "Downloading Paddle Lite from: $URL"
+          if ! curl --fail-with-body -L -o paddle-lite.tar.gz "$URL"; then
+            echo "ERROR: Failed to download Paddle Lite from $URL"
+            echo "Please manually download inference_lite_lib.android.armv8.*.tar.gz"
+            echo "and extract PaddlePredictor.jar + libpaddle_lite_jni.so into the project."
+            exit 1
+          fi
+
+          echo "Extracting Paddle Lite..."
           tar -xzf paddle-lite.tar.gz --strip-components=1 -C paddle-lite
+
+          echo "Copying Paddle Lite files..."
           cp paddle-lite/java/jar/PaddlePredictor.jar app/libs/
           cp paddle-lite/java/so/libpaddle_lite_jni.so app/src/main/jniLibs/arm64-v8a/
-          cp paddle-lite/cxx/lib/libpaddle_light_api_shared.so app/src/main/jniLibs/arm64-v8a/
+          
+          # 部分版本 so 文件路径不同，兼容处理
+          if [ -f paddle-lite/cxx/lib/libpaddle_light_api_shared.so ]; then
+            cp paddle-lite/cxx/lib/libpaddle_light_api_shared.so app/src/main/jniLibs/arm64-v8a/
+          fi
+
+          echo "Paddle Lite files prepared:"
+          ls -la app/libs/PaddlePredictor.jar
+          ls -la app/src/main/jniLibs/arm64-v8a/
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # Debug 构建（默认，无需签名）
       - name: Build Debug APK
         if: github.event.inputs.build_type != 'release'
         run: ./gradlew assembleDebug --no-daemon
@@ -57,7 +78,6 @@ jobs:
           name: app-debug
           path: app/build/outputs/apk/debug/*.apk
 
-      # Release 构建（需要签名，仅手动触发）
       - name: Build Release APK
         if: github.event.inputs.build_type == 'release'
         env:
@@ -66,7 +86,6 @@ jobs:
           KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
-          # 将 base64 编码的签名文件解码
           echo "$STORE_FILE" | base64 -d > app/release.jks
           ./gradlew assembleRelease --no-daemon
 
@@ -76,4 +95,3 @@ jobs:
         with:
           name: app-release
           path: app/build/outputs/apk/release/*.apk
-
