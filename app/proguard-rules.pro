@@ -107,3 +107,13 @@
 
 # 保留行号信息以便崩溃时定位
 -renamesourcefileattribute SourceFile
+
+
+# ============================================
+# Log4j / OSGi（xmlbeans 传递依赖）
+# ============================================
+
+-dontwarn org.apache.logging.log4j.util.**
+-dontwarn aQute.bnd.annotation.spi.**
+-dontwarn org.osgi.framework.**
+
