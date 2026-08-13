@@ -122,7 +122,7 @@ class ScreenCaptureService : Service() {
                     captureAndSearch(rect)
                 } else if (!isInitialized) {
                     handler.post {
-                        Toast.makeText(this, R.string.screenshot_service_not_ready, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, R.string.screenshot.screenshot_service_not_ready, Toast.LENGTH_SHORT).show()
                     }
                 }
                 return START_STICKY
@@ -292,7 +292,7 @@ class ScreenCaptureService : Service() {
 
     private fun imageToBitmap(image: Image): Bitmap? {
         return try {
-            val planes = image.pl.planes
+            val planes = image.planes  // ✅ 修复：原来是 image.pl.planes
             val buffer = planes[0].buffer
             val pixelStride = planes[0].pixelStride
             val rowStride = planes[0].rowStride
@@ -346,7 +346,7 @@ class ScreenCaptureService : Service() {
         val manager = QuestionApp.ocrManager
 
         if (!manager.isReady) {
-            Log.w(tag, "OCR not ready, maybe models missing")
+            Log.w(tag, "OCR not ready, maybe paddle models missing")
             handler.post { Toast.makeText(this, R.string.ocr_not_initialized, Toast.LENGTH_LONG).show() }
             bitmap.recycle()
             return
