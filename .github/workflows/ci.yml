@@ -37,37 +37,76 @@ jobs:
           set -euo pipefail
           mkdir -p app/libs app/src/main/jniLibs/arm64-v8a paddle-lite
 
-          URL="https://github.com/PaddlePaddle/Paddle-Lite/releases/download/v2.10/inference_lite_lib.android.armv8.gcc.c++_shared.with_extra.with_cv.tar.gz"
-
-          echo "Downloading from: $URL"
-          if ! curl --fail-with-body -L -o paddle-lite.tar.gz "$URL"; then
-            echo "ERROR: Failed to download Paddle Lite"
+          # 尝试多个可能的下载链接
+          URLS=(
+            "https://github.com/PaddlePaddle/Paddle-Lite/releases/download/v2.10/inference_lite_lib.android.armv8.gcc.c++_static.with_extra.with_cv.tar.gz"
+            "https://github.com/PaddlePaddle/Paddle-Lite/releases/download/v2.10/inference_lite_lib.android.armv8.clang.c++_static.with_extra.with_cv.tar.gz"
+            "https://github.com/PaddlePaddle/Paddle-Lite/releases/download/v2.13/inference_lite_lib.android.armv8.gcc.c++_static.with_extra.with_cv.tar.gz"
+          )
+          
+          DOWNLOADED=false
+          for url in "${URLS[@]}"; do
+            echo "Trying: $url"
+            rm -f paddle-lite.tar.gz
+            if curl -L --max-time 60 -o paddle-lite.tar.gz "$url"; then
+              # 验证下载的是不是 gzip 文件（而不是 HTML 错误页面）
+              if file paddle-lite.tar.gz | grep -q "gzip compressed data"; then
+                echo "✅ Valid tar.gz downloaded from $url"
+                DOWNLOADED=true
+                break
+              else
+                echo "⚠️ Downloaded file is not tar.gz:"
+                file paddle-lite.tar.gz || true
+                echo "First 200 bytes:"
+                head -c 200 paddle-lite.tar.gz || true
+                echo ""
+              fi
+            else
+              echo "❌ curl failed for $url"
+            fi
+          done
+          
+          if [ "$DOWNLOADED" != "true" ]; then
+            echo "ERROR: Could not download valid Paddle Lite package from any URL."
+            echo "Please manually download the library and commit to the repository:"
+            echo "  app/libs/PaddlePredictor.jar"
+            echo "  app/src/main/jniLibs/arm64-v8a/libpaddle_lite_jni.so"
+            echo "  app/src/main/jniLibs/arm64-v8a/libpaddle_light_api_shared.so"
             exit 1
           fi
 
-          echo "Extracting..."
+          echo "Extracting tar.gz..."
           tar -xzf paddle-lite.tar.gz --strip-components=1 -C paddle-lite
-
-          echo "Copying Paddle Lite files..."
-          cp paddle-lite/java/jar/PaddlePredictor.jar app/libs/
-          cp paddle-lite/java/so/libpaddle_lite_jni.so app/src/main/jniLibs/arm64-v8a/
           
-          # 复制 cxx 共享库
-          if [ -f paddle-lite/cxx/lib/libpaddle_light_api_shared.so ]; then
-            cp paddle-lite/cxx/lib/libpaddle_light_api_shared.so app/src/main/jniLibs/arm64-v8a/
+          echo "Directory structure:"
+          find paddle-lite -type f | head -30
+
+          echo "Copying files..."
+          # 查找 JAR 文件（可能在不同子目录）
+          JAR_PATH=$(find paddle-lite -name "PaddlePredictor.jar" | head -1)
+          if [ -z "$JAR_PATH" ]; then
+            echo "ERROR: PaddlePredictor.jar not found in extracted package!"
+            exit 1
+          fi
+          cp "$JAR_PATH" app/libs/
+          
+          # 查找 SO 文件
+          find paddle-lite -name "libpaddle_lite_jni.so" -exec cp {} app/src/main/jniLibs/arm64-v8a/ \;
+          find paddle-lite -name "libpaddle_light_api_shared.so" -exec cp {} app/src/main/jniLibs/arm64-v8a/ \;
+
+          # ✅ 关键验证：JAR 必须存在且非空
+          echo "Verifying JAR file:"
+          ls -la app/libs/PaddlePredictor.jar
+          if [ ! -s app/libs/PaddlePredictor.jar ]; then
+            echo "ERROR: PaddlePredictor.jar is missing or empty!"
+            exit 1
           fi
           
-          # ✅ 关键修复：复制 libc++_shared.so（c++_shared 编译选项必需）
-          if [ -f paddle-lite/cxx/lib/libc++_shared.so ]; then
-            cp paddle-lite/cxx/lib/libc++_shared.so app/src/main/jniLibs/arm64-v8a/
-          elif [ -f paddle-lite/java/so/libc++_shared.so ]; then
-            cp paddle-lite/java/so/libc++_shared.so app/src/main/jniLibs/arm64-v8a/
-          else
-            echo "WARNING: libc++_shared.so not found in downloaded package, searching..."
-            find paddle-lite -name "libc++_shared.so" -exec cp {} app/src/main/jniLibs/arm64-v8a/ \; || true
-          fi
+          # 验证 JAR 内容
+          echo "JAR contents (first 10 entries):"
+          jar tf app/libs/PaddlePredictor.jar | head -10 || echo "jar command not available"
 
-          echo "Verifying files in jniLibs:"
+          echo "Verifying SO files:"
           ls -la app/src/main/jniLibs/arm64-v8a/
 
       - name: Grant execute permission for gradlew
