@@ -91,12 +91,13 @@ class FloatWindowService : Service() {
                         handler.post { Toast.makeText(context, error, Toast.LENGTH_LONG).show() }
                     }
                 }
+                // 关键修复：添加 ACTION_SHOW_RESULT 的处理
                 ACTION_SHOW_RESULT -> {
                     val question = intent.getStringExtra(EXTRA_QUESTION) ?: ""
                     val answer = intent.getStringExtra(EXTRA_ANSWER) ?: ""
                     val analysis = intent.getStringExtra(EXTRA_ANALYSIS) ?: ""
                     val matched = intent.getBooleanExtra(EXTRA_MATCHED, false)
-                    Log.d(TAG, "Show result: matched=$matched")
+                    Log.d(TAG, "Show result received: matched=$matched")
                     handler.post {
                         showResult(question, answer, analysis, matched)
                     }
@@ -126,6 +127,7 @@ class FloatWindowService : Service() {
             val filter = IntentFilter().apply {
                 addAction(ScreenCaptureService.ACTION_PROJECTION_READY)
                 addAction(ScreenCaptureService.ACTION_PROJECTION_STOPPED)
+                // 关键修复：注册 ACTION_SHOW_RESULT
                 addAction(ACTION_SHOW_RESULT)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -305,6 +307,7 @@ class FloatWindowService : Service() {
         floatBall?.visibility = View.VISIBLE
     }
 
+    // 关键修复：恢复 showResult 方法
     fun showResult(question: String, answer: String, analysis: String, isMatched: Boolean) {
         try {
             if (isShowingCrop) {
@@ -342,7 +345,6 @@ class FloatWindowService : Service() {
                 startService(intent)
             }
             else -> {
-                // 关键修复：用悬浮结果窗替代 Toast，确保用户能看到
                 showResult(
                     "⚠️ 截图服务未就绪",
                     "录屏权限可能已被系统回收，或无障碍服务未开启。\n请重新点击「悬浮搜题」选择截图方式。",
