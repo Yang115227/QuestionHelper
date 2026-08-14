@@ -123,14 +123,10 @@ class ScreenCaptureService : Service() {
                 if (rect != null && isInitialized) {
                     captureAndSearch(rect)
                 } else if (!isInitialized) {
-                    handler.post {
-                        Toast.makeText(this, "截图服务未就绪，请重新授权录屏", Toast.LENGTH_SHORT).show()
-                    }
+                    showError("截图服务未就绪", "录屏权限可能已被系统回收，请重新点击「悬浮搜题」授权")
                 } else {
                     Log.e(tag, "CAPTURE received but rect is null")
-                    handler.post {
-                        Toast.makeText(this, "截图区域为空，请重新框选", Toast.LENGTH_SHORT).show()
-                    }
+                    showError("框选区域无效", "请重新框选题目区域")
                 }
                 return START_STICKY
             }
@@ -236,9 +232,7 @@ class ScreenCaptureService : Service() {
                 val bitmap = captureScreen()
                 if (bitmap == null) {
                     Log.w(tag, "captureScreen returned null")
-                    handler.post {
-                        Toast.makeText(this@ScreenCaptureService, "截图失败：无法获取屏幕图像，请检查录屏权限或重试", Toast.LENGTH_LONG).show()
-                    }
+                    showError("截图失败", "无法获取屏幕图像，请检查录屏权限是否仍在生效，或尝试重新授权")
                     return@launch
                 }
 
@@ -251,9 +245,7 @@ class ScreenCaptureService : Service() {
 
                 if (safeRect.width() <= 0 || safeRect.height() <= 0) {
                     bitmap.recycle()
-                    handler.post {
-                        Toast.makeText(this@ScreenCaptureService, R.string.screenshot_invalid_area, Toast.LENGTH_SHORT).show()
-                    }
+                    showError("框选区域无效", "所选区域超出屏幕范围或面积为零，请重新框选")
                     return@launch
                 }
 
@@ -272,9 +264,7 @@ class ScreenCaptureService : Service() {
                 processBitmap(safeCropped)
             } catch (e: Throwable) {
                 Log.e(tag, "Capture and search failed", e)
-                handler.post {
-                    Toast.makeText(this@ScreenCaptureService, "截图处理失败：${e.message}", Toast.LENGTH_LONG).show()
-                }
+                showError("截图处理异常", "错误：${e.message}，请重试")
             }
         }
     }
@@ -390,9 +380,7 @@ class ScreenCaptureService : Service() {
         if (!manager.isReady) {
             val error = manager.initError ?: "未知错误"
             Log.e(tag, "OCR 未就绪: $error")
-            handler.post {
-                Toast.makeText(this, "OCR 未初始化\n$error", Toast.LENGTH_LONG).show()
-            }
+            showError("OCR 未初始化", "错误：$error\n请检查模型文件是否完整")
             bitmap.recycle()
             return
         }
@@ -422,17 +410,33 @@ class ScreenCaptureService : Service() {
                         putExtra(FloatWindowService.EXTRA_MATCHED, isMatched)
                     })
                 } else {
-                    handler.post {
-                        Toast.makeText(this@ScreenCaptureService, "未识别到文字，请确保框选区域包含清晰的文字", Toast.LENGTH_LONG).show()
-                    }
+                    showError("未识别到文字", "OCR 未能识别出文字，请确保：\n1. 框选区域包含清晰的文字\n2. 文字与背景对比度足够\n3. 图片没有过度模糊")
                 }
             } catch (e: Throwable) {
                 Log.e(tag, "OCR failed", e)
-                handler.post {
-                    Toast.makeText(this@ScreenCaptureService, "文字识别失败：${e.message}", Toast.LENGTH_LONG).show()
-                }
+                showError("文字识别失败", "错误：${e.message}\n请检查 OCR 模型或重试")
             }
         }
+    }
+
+    /**
+     * 关键修复：通过广播显示错误，替代可能被系统拦截的 Toast
+     */
+    private fun showError(title: String, message: String) {
+        Log.e(tag, "Error: $title - $message")
+        // 双保险：尝试 Toast（可能在部分系统上有效）
+        handler.post {
+            try {
+                Toast.makeText(this@ScreenCaptureService, "$title: $message", Toast.LENGTH_LONG).show()
+            } catch (_: Throwable) {}
+        }
+        // 主方案：发送广播让 FloatWindowService 显示结果窗
+        sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
+            putExtra(FloatWindowService.EXTRA_QUESTION, "⚠️ $title")
+            putExtra(FloatWindowService.EXTRA_ANSWER, message)
+            putExtra(FloatWindowService.EXTRA_ANALYSIS, "点击悬浮球重新尝试框选")
+            putExtra(FloatWindowService.EXTRA_MATCHED, false)
+        })
     }
 
     private fun releaseProjection() {
