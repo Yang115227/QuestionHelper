@@ -307,6 +307,10 @@ class FloatWindowService : Service() {
 
     fun showResult(question: String, answer: String, analysis: String, isMatched: Boolean) {
         try {
+            // 如果正在显示框选层，先关闭它，避免结果窗被挡住
+            if (isShowingCrop) {
+                hideCropView()
+            }
             if (resultView == null) {
                 resultView = FloatResultView(this)
             }
