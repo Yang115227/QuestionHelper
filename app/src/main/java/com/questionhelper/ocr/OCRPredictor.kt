@@ -22,9 +22,13 @@ class OCRPredictor(context: Context, assetPath: String) {
     private val detInputShape = intArrayOf(1, 3, 480, 480)
     private val recInputShape = intArrayOf(1, 3, 48, 320)
 
-    // 关键修正：PaddleOCR 模型通常使用 mean=0.5, std=0.5
-    private val mean = floatArrayOf(0.5f, 0.5f, 0.5f)
-    private val std = floatArrayOf(0.5f, 0.5f, 0.5f)
+    // 检测模型归一化参数（ImageNet 标准）
+    private val detMean = floatArrayOf(0.485f, 0.456f, 0.406f)
+    private val detStd = floatArrayOf(0.229f, 0.224f, 0.225f)
+
+    // 识别模型归一化参数（PaddleOCR 官方）
+    private val recMean = floatArrayOf(0.5f, 0.5f, 0.5f)
+    private val recStd = floatArrayOf(0.5f, 0.5f, 0.5f)
 
     init {
         Log.d(tag, "OCRPredictor 开始初始化")
@@ -74,15 +78,18 @@ class OCRPredictor(context: Context, assetPath: String) {
 
     private fun loadLabels() {
         try {
-            context.assets.open("$assetPath/ppocr_keys_v1.txt").bufferedReader(Charsets.UTF_8).useLines { lines ->
-                lines.forEach { line ->
-                    val trimmed = line.trim()
-                    if (trimmed.isNotEmpty()) {
-                        wordLabels.add(trimmed)
+            context.assets.open("$assetPath/ppocr_keys_v1.txt")
+                .bufferedReader(Charsets.UTF_8)
+                .useLines { lines ->
+                    lines.forEach { line ->
+                        val trimmed = line.trim()
+                        if (trimmed.isNotEmpty()) {
+                            wordLabels.add(trimmed)
+                        }
                     }
                 }
-            }
             Log.d(tag, "标签加载完成，共 ${wordLabels.size} 个")
+            Log.d(tag, "前10个标签: ${wordLabels.take(10).joinToString(",")}")
         } catch (e: Exception) {
             Log.e(tag, "标签加载失败", e)
         }
@@ -107,11 +114,12 @@ class OCRPredictor(context: Context, assetPath: String) {
         return results.sortedBy { it.box.minOf { p -> p.y } }
     }
 
+    // ===== 检测 =====
     private fun runDetection(bitmap: Bitmap, predictor: PaddlePredictor): List<List<Point>> {
         val h = detInputShape[2]
         val w = detInputShape[3]
         val scaledBitmap = Bitmap.createScaledBitmap(bitmap, w, h, true)
-        val inputData = bitmapToFloatArray(scaledBitmap, h, w)
+        val inputData = bitmapToFloatArray(scaledBitmap, h, w, detMean, detStd)
         scaledBitmap.recycle()
 
         val inputTensor = predictor.getInput(0)
@@ -152,10 +160,11 @@ class OCRPredictor(context: Context, assetPath: String) {
         }.filter { polygonArea(it) > 10 }
     }
 
+    // ===== 识别 =====
     private fun runRecognition(bitmap: Bitmap, predictor: PaddlePredictor): String {
-        // 等比例缩放并填充到模型输入尺寸 (48x320)，避免文字变形
+        // 等比例缩放并填充（背景必须为黑色）
         val resizedBitmap = resizeAndPad(bitmap, recInputShape[3], recInputShape[2])
-        val inputData = bitmapToFloatArray(resizedBitmap, recInputShape[2], recInputShape[3])
+        val inputData = bitmapToFloatArray(resizedBitmap, recInputShape[2], recInputShape[3], recMean, recStd)
         resizedBitmap.recycle()
 
         val inputTensor = predictor.getInput(0)
@@ -171,7 +180,7 @@ class OCRPredictor(context: Context, assetPath: String) {
     }
 
     /**
-     * 等比例缩放并填充（白色背景）
+     * 等比例缩放并填充黑色（0）
      */
     private fun resizeAndPad(src: Bitmap, targetW: Int, targetH: Int): Bitmap {
         val srcW = src.width
@@ -184,7 +193,7 @@ class OCRPredictor(context: Context, assetPath: String) {
 
         val outBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(outBitmap)
-        canvas.drawColor(android.graphics.Color.WHITE)
+        canvas.drawColor(android.graphics.Color.BLACK)   // 关键：黑色填充
         val left = (targetW - newW) / 2
         val top = (targetH - newH) / 2
         canvas.drawBitmap(scaled, left.toFloat(), top.toFloat(), null)
@@ -227,7 +236,10 @@ class OCRPredictor(context: Context, assetPath: String) {
         return Bitmap.createBitmap(bitmap, left, top, width, height)
     }
 
-    private fun bitmapToFloatArray(bitmap: Bitmap, h: Int, w: Int): FloatArray {
+    private fun bitmapToFloatArray(
+        bitmap: Bitmap, h: Int, w: Int,
+        mean: FloatArray, std: FloatArray
+    ): FloatArray {
         val pixels = IntArray(h * w)
         bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
         val floatValues = FloatArray(3 * h * w)
