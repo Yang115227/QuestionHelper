@@ -224,7 +224,6 @@ class CropOverlayView @JvmOverloads constructor(
         super.onDraw(canvas)
 
         if (!hasSelection()) {
-            // 无选区时只显示提示文字
             val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.WHITE
                 textSize = 48f
@@ -265,7 +264,6 @@ class CropOverlayView @JvmOverloads constructor(
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
-                // 如果触摸点位于某个按钮区域，则不处理（让子View处理）
                 if (isPointInButton(x, y)) {
                     return false
                 }
@@ -323,7 +321,6 @@ class CropOverlayView @JvmOverloads constructor(
     }
 
     private fun isPointInButton(x: Int, y: Int): Boolean {
-        // 检查是否在按钮的矩形区域内（忽略 confirmBtn 因为它在底部，但按下时可能也会触发拖动？）
         val closeRect = Rect(
             cropRect.right - btnSize, cropRect.top,
             cropRect.right, cropRect.top + btnSize
