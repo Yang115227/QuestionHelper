@@ -102,7 +102,6 @@ class OcrManager(context: Context) {
             val results = p.runOcr(bitmap)
             val text = results.joinToString("\n") { it.text }
 
-            // 如果结果为空，显示调试信息
             if (text.isEmpty()) {
                 val debug = p.debugInfo ?: "无调试信息"
                 withContext(Dispatchers.Main) {
