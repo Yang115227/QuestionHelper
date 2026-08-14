@@ -10,10 +10,6 @@ import android.view.*
 import android.widget.*
 import com.questionhelper.R
 
-/**
- * 悬浮搜索结果窗：支持拖拽、透明背景、正确结果标红
- * 修复：拖拽仅标题栏、添加关闭回调、自适应宽度、延长自动关闭时间
- */
 class FloatResultView(private val context: Context) {
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -25,12 +21,9 @@ class FloatResultView(private val context: Context) {
 
     companion object {
         private const val TAG = "FloatResultView"
-        private const val AUTO_DISMISS_DELAY = 30000L  // 30秒自动关闭
+        private const val AUTO_DISMISS_DELAY = 30000L
     }
 
-    /**
-     * 显示搜索结果悬浮窗
-     */
     fun show(question: String, answer: String, analysis: String, isMatched: Boolean) {
         if (isShowing) {
             dismiss()
@@ -40,14 +33,12 @@ class FloatResultView(private val context: Context) {
             setBackgroundColor(0x00000000)
         }
 
-        // 内容卡片
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
             background = createCardBackground()
         }
 
-        // 标题栏（拖拽区域 + 关闭按钮）
         val titleBar = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -77,10 +68,8 @@ class FloatResultView(private val context: Context) {
         titleBar.addView(closeBtn)
         card.addView(titleBar)
 
-        // 分隔线
         card.addView(createDivider())
 
-        // 滚动内容区
         val scrollView = ScrollView(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -94,24 +83,20 @@ class FloatResultView(private val context: Context) {
             setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
         }
 
-        // 题目
         contentLayout.addView(createLabel("题目"))
         contentLayout.addView(createContentText(question, 15f, 0xFF333333.toInt()))
         contentLayout.addView(createSpacer())
 
-        // 答案（匹配到则标红，未匹配标绿）
         contentLayout.addView(createLabel(if (isMatched) "答案 ✅ 已匹配题库" else "答案 ⚠️ 未匹配题库"))
         val answerColor = if (isMatched) 0xFFE53935.toInt() else 0xFF2E7D32.toInt()
         contentLayout.addView(createContentText(answer, 17f, answerColor, true))
         contentLayout.addView(createSpacer())
 
-        // 解析
         if (analysis.isNotBlank()) {
             contentLayout.addView(createLabel("解析"))
             contentLayout.addView(createContentText(analysis, 14f, 0xFF666666.toInt()))
         }
 
-        // 未匹配提示
         if (!isMatched) {
             contentLayout.addView(createSpacer())
             contentLayout.addView(createContentText(
@@ -124,13 +109,11 @@ class FloatResultView(private val context: Context) {
         card.addView(scrollView)
         root.addView(card)
 
-        // 计算窗口宽度（屏幕宽度的85%，最大400dp，最小280dp）
         val screenWidth = context.resources.displayMetrics.widthPixels
         val maxWidth = dpToPx(400)
         val minWidth = dpToPx(280)
         val width = (screenWidth * 0.85f).toInt().coerceIn(minWidth, maxWidth)
 
-        // 布局参数
         val params = WindowManager.LayoutParams(
             width,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -146,7 +129,6 @@ class FloatResultView(private val context: Context) {
             y = dpToPx(120)
         }
 
-        // 仅标题栏可拖拽，避免影响滚动和按钮点击
         titleBar.setOnTouchListener(DragTouchListener(params, root))
 
         container = root
@@ -156,12 +138,10 @@ class FloatResultView(private val context: Context) {
             Log.d(TAG, "Result window shown, matched=$isMatched")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to show result window", e)
-            // 如果添加失败，确保 onDismiss 被调用以恢复悬浮球
             onDismiss?.invoke()
             return
         }
 
-        // 自动关闭（30秒）
         Handler(Looper.getMainLooper()).postDelayed({
             if (isShowing) dismiss()
         }, AUTO_DISMISS_DELAY)
@@ -177,7 +157,6 @@ class FloatResultView(private val context: Context) {
             container = null
             isShowing = false
         }
-        // 触发回调
         onDismiss?.invoke()
     }
 
