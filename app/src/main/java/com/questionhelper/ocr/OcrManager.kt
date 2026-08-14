@@ -2,7 +2,6 @@ package com.questionhelper.ocr
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.os.Build
 import android.util.Log
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
@@ -11,7 +10,7 @@ import kotlinx.coroutines.withContext
 class OcrManager(context: Context) {
     private var predictor: OCRPredictor? = null
     private val tag = "OcrManager"
-    
+
     /** 初始化失败的详细原因，UI 层可直接读取显示 */
     var initError: String? = null
         private set
@@ -25,7 +24,7 @@ class OcrManager(context: Context) {
 
     private fun initPredictor(context: Context) {
         val sb = StringBuilder()
-        
+
         // 1. 检查 assets 模型文件
         val assetManager = context.assets
         val requiredFiles = listOf(
@@ -50,7 +49,7 @@ class OcrManager(context: Context) {
             return
         }
 
-        // 2. 检查类是否存在（确认 JAR 生效，而非 stub）
+        // 2. 检查类是否存在
         try {
             Class.forName("com.baidu.paddle.lite.PaddlePredictor")
         } catch (e: Throwable) {
@@ -85,7 +84,6 @@ class OcrManager(context: Context) {
     }
 
     private fun showToast(context: Context, msg: String) {
-        // 在主线程显示 Toast，让用户直接看到错误
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             Toast.makeText(context, "OCR诊断: $msg", Toast.LENGTH_LONG).show()
         }
@@ -99,9 +97,21 @@ class OcrManager(context: Context) {
         }
         try {
             val results = p.runOcr(bitmap)
-            results.joinToString("\n") { it.text }
+            val text = results.joinToString("\n") { it.text }
+            // 显示识别结果长度和前20字，便于调试
+            withContext(Dispatchers.Main) {
+                Toast.makeText(
+                    context,
+                    "OCR长度:${text.length} 前20字:${text.take(20)}",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            text
         } catch (e: Throwable) {
             Log.e(tag, "识别失败: ${e.message}", e)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "OCR失败:${e.message}", Toast.LENGTH_SHORT).show()
+            }
             ""
         }
     }
