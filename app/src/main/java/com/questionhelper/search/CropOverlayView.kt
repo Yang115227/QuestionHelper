@@ -127,7 +127,7 @@ class CropOverlayView @JvmOverloads constructor(
             }
             setOnClickListener {
                 if (cropRect.width() >= minCropSize && cropRect.height() >= minCropSize) {
-                    // 关键修复：立即给用户视觉反馈，防止以为没点到
+                    // 关键修复：立即给用户视觉反馈
                     this.text = "正在识别..."
                     this.isEnabled = false
                     background = GradientDrawable().apply {
