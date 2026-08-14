@@ -19,6 +19,9 @@ class OCRPredictor(context: Context, assetPath: String) {
     private val context: Context = context.applicationContext
     private val assetPath: String = assetPath
 
+    // 调试开关：true 表示跳过检测，直接识别整张图；false 恢复正常流程
+    private val DEBUG_SKIP_DET = true
+
     private val detInputShape = intArrayOf(1, 3, 480, 480)
     private val recInputShape = intArrayOf(1, 3, 48, 320)
 
@@ -89,6 +92,7 @@ class OCRPredictor(context: Context, assetPath: String) {
                     }
                 }
             Log.d(tag, "标签加载完成，共 ${wordLabels.size} 个")
+            // 打印前10个标签（可通过 Toast 查看，但这里仅 Log）
             Log.d(tag, "前10个标签: ${wordLabels.take(10).joinToString(",")}")
         } catch (e: Exception) {
             Log.e(tag, "标签加载失败", e)
@@ -96,9 +100,25 @@ class OCRPredictor(context: Context, assetPath: String) {
     }
 
     fun runOcr(bitmap: Bitmap): List<OcrResult> {
-        val det = detPredictor ?: return emptyList()
         val rec = recPredictor ?: return emptyList()
 
+        if (DEBUG_SKIP_DET) {
+            // 调试模式：直接识别整张图
+            val text = runRecognition(bitmap, rec)
+            if (text.isNotBlank()) {
+                val box = listOf(
+                    Point(0, 0),
+                    Point(bitmap.width, 0),
+                    Point(bitmap.width, bitmap.height),
+                    Point(0, bitmap.height)
+                )
+                return listOf(OcrResult(text, box))
+            }
+            return emptyList()
+        }
+
+        // 正常流程：检测 + 识别
+        val det = detPredictor ?: return emptyList()
         val boxes = runDetection(bitmap, det)
         if (boxes.isEmpty()) return emptyList()
 
@@ -114,7 +134,6 @@ class OCRPredictor(context: Context, assetPath: String) {
         return results.sortedBy { it.box.minOf { p -> p.y } }
     }
 
-    // ===== 检测 =====
     private fun runDetection(bitmap: Bitmap, predictor: PaddlePredictor): List<List<Point>> {
         val h = detInputShape[2]
         val w = detInputShape[3]
@@ -160,9 +179,7 @@ class OCRPredictor(context: Context, assetPath: String) {
         }.filter { polygonArea(it) > 10 }
     }
 
-    // ===== 识别 =====
     private fun runRecognition(bitmap: Bitmap, predictor: PaddlePredictor): String {
-        // 等比例缩放并填充（背景必须为黑色）
         val resizedBitmap = resizeAndPad(bitmap, recInputShape[3], recInputShape[2])
         val inputData = bitmapToFloatArray(resizedBitmap, recInputShape[2], recInputShape[3], recMean, recStd)
         resizedBitmap.recycle()
@@ -179,9 +196,6 @@ class OCRPredictor(context: Context, assetPath: String) {
         return decodeRecOutput(outputData, outputShape)
     }
 
-    /**
-     * 等比例缩放并填充黑色（0）
-     */
     private fun resizeAndPad(src: Bitmap, targetW: Int, targetH: Int): Bitmap {
         val srcW = src.width
         val srcH = src.height
@@ -193,7 +207,7 @@ class OCRPredictor(context: Context, assetPath: String) {
 
         val outBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(outBitmap)
-        canvas.drawColor(android.graphics.Color.BLACK)   // 关键：黑色填充
+        canvas.drawColor(android.graphics.Color.BLACK)   // 黑色填充
         val left = (targetW - newW) / 2
         val top = (targetH - newH) / 2
         canvas.drawBitmap(scaled, left.toFloat(), top.toFloat(), null)
@@ -217,7 +231,6 @@ class OCRPredictor(context: Context, assetPath: String) {
                     maxIdx = c
                 }
             }
-            // idx=0 是 CTC blank，跳过；去重
             if (maxIdx != 0 && maxIdx != lastIndex && maxIdx - 1 < wordLabels.size) {
                 sb.append(wordLabels[maxIdx - 1])
             }
