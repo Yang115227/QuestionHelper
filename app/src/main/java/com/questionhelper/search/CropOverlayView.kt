@@ -7,6 +7,7 @@ import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.View
 import android.widget.*
 import androidx.core.content.ContextCompat
 
@@ -21,7 +22,6 @@ class CropOverlayView @JvmOverloads constructor(
     private val prefs: SharedPreferences = context.getSharedPreferences("crop_prefs", Context.MODE_PRIVATE)
 
     // 绘制
-    private val overlayPaint = Paint().apply { color = Color.parseColor("#B3000000") }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#2196F3")
         style = Paint.Style.STROKE
@@ -53,86 +53,78 @@ class CropOverlayView @JvmOverloads constructor(
     private var lastX = 0f
     private var lastY = 0f
 
+    // 按钮视图
+    private lateinit var closeBtn: ImageButton
+    private lateinit var resetBtn: ImageButton
+    private lateinit var hideBtn: ImageButton
+    private lateinit var confirmBtn: Button
+
+    // 按钮尺寸
+    private val btnSize = dpToPx(36)
+    private val confirmWidth = dpToPx(120)
+    private val confirmHeight = dpToPx(44)
+
     init {
         setWillNotDraw(false)
-        // 添加半透明背景，让用户明确知道选区层已显示
-        setBackgroundColor(Color.parseColor("#40000000"))
-        setupUI()
+        // 完全透明背景，不绘制全屏遮罩
+        setBackgroundColor(Color.TRANSPARENT)
+        setupButtons()
+        post {
+            loadCropRect()
+            if (cropRect.isEmpty) resetCropRect()
+            updateButtonPositions()
+            invalidate()
+        }
     }
 
-    private fun setupUI() {
-        // 顶部工具栏（嵌入到遮罩顶部）
-        val topBar = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.parseColor("#CC000000"))
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                dpToPx(52)
-            ).apply {
-                gravity = Gravity.TOP
-            }
-
-            // 回到选框按钮
-            val backBtn = ImageButton(context).apply {
-                setImageResource(android.R.drawable.ic_menu_revert)
-                setBackgroundColor(Color.TRANSPARENT)
-                setColorFilter(Color.WHITE)
-                layoutParams = LinearLayout.LayoutParams(dpToPx(44), dpToPx(44)).apply {
-                    leftMargin = dpToPx(8)
-                }
-                setOnClickListener { resetCropRect() }
-            }
-            addView(backBtn)
-
-            // 拖拽提示
-            val hint = TextView(context).apply {
-                text = "按住此区域拖拽"
-                setTextColor(Color.WHITE)
-                textSize = 15f
-                gravity = Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.MATCH_PARENT, 1f
-                )
-            }
-            addView(hint)
-
-            // 关闭按钮
-            val closeBtn = ImageButton(context).apply {
-                setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
-                setBackgroundColor(Color.TRANSPARENT)
-                setColorFilter(Color.WHITE)
-                layoutParams = LinearLayout.LayoutParams(dpToPx(44), dpToPx(44)).apply {
-                    rightMargin = dpToPx(8)
-                }
-                setOnClickListener { onCropCanceled?.invoke() }
-            }
-            addView(closeBtn)
+    private fun setupButtons() {
+        // 关闭按钮（右上角）
+        closeBtn = ImageButton(context).apply {
+            setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
+            background = createCircleButtonBackground(Color.parseColor("#E53935"))
+            setColorFilter(Color.WHITE)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setOnClickListener { onCropCanceled?.invoke() }
         }
-        addView(topBar)
 
-        // 确认搜题按钮（底部中央，嵌入在遮罩底部）
-        val confirmBtn = Button(context).apply {
+        // 重置按钮（左上角）
+        resetBtn = ImageButton(context).apply {
+            setImageResource(android.R.drawable.ic_menu_revert)
+            background = createCircleButtonBackground(Color.parseColor("#757575"))
+            setColorFilter(Color.WHITE)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setOnClickListener {
+                resetCropRect()
+                updateButtonPositions()
+            }
+        }
+
+        // 隐藏按钮（左下角）
+        hideBtn = ImageButton(context).apply {
+            setImageResource(android.R.drawable.ic_menu_view)
+            background = createCircleButtonBackground(Color.parseColor("#757575"))
+            setColorFilter(Color.WHITE)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setOnClickListener { onCropCanceled?.invoke() }
+        }
+
+        // 确认搜题按钮（底部居中）
+        confirmBtn = Button(context).apply {
             text = "确认搜题"
             setTextColor(Color.WHITE)
             textSize = 16f
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = dpToPx(24).toFloat()
+                cornerRadius = confirmHeight / 2f
                 setColor(Color.parseColor("#2196F3"))
-            }
-            layoutParams = FrameLayout.LayoutParams(dpToPx(160), dpToPx(52)).apply {
-                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                bottomMargin = dpToPx(100)
             }
             setOnClickListener {
                 if (cropRect.width() >= minCropSize && cropRect.height() >= minCropSize) {
-                    // 关键修复：立即给用户视觉反馈
-                    this.text = "正在识别..."
-                    this.isEnabled = false
+                    text = "正在识别..."
+                    isEnabled = false
                     background = GradientDrawable().apply {
                         shape = GradientDrawable.RECTANGLE
-                        cornerRadius = dpToPx(24).toFloat()
+                        cornerRadius = confirmHeight / 2f
                         setColor(Color.parseColor("#757575"))
                     }
                     saveCropRect()
@@ -140,29 +132,56 @@ class CropOverlayView @JvmOverloads constructor(
                 }
             }
         }
-        addView(confirmBtn)
 
-        // 隐藏按钮（左下角）
-        val hideBtn = ImageButton(context).apply {
-            setImageResource(android.R.drawable.ic_menu_view)
-            setBackgroundColor(Color.TRANSPARENT)
-            setColorFilter(Color.WHITE)
-            layoutParams = FrameLayout.LayoutParams(dpToPx(48), dpToPx(48)).apply {
-                gravity = Gravity.BOTTOM or Gravity.START
-                bottomMargin = dpToPx(24)
-                leftMargin = dpToPx(24)
-            }
-            setOnClickListener { onCropCanceled?.invoke() }
-        }
+        addView(closeBtn)
+        addView(resetBtn)
         addView(hideBtn)
+        addView(confirmBtn)
+    }
 
-        // 初始化选区（先默认，布局完成后再加载记忆）
-        post {
-            loadCropRect()
-            if (cropRect.isEmpty) {
-                resetCropRect()
-            }
+    private fun createCircleButtonBackground(color: Int): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(color)
         }
+    }
+
+    private fun updateButtonPositions() {
+        if (!this::closeBtn.isInitialized) return
+        val left = cropRect.left
+        val top = cropRect.top
+        val right = cropRect.right
+        val bottom = cropRect.bottom
+
+        // 关闭按钮：右上角内侧
+        closeBtn.layoutParams = FrameLayout.LayoutParams(btnSize, btnSize).apply {
+            leftMargin = right - btnSize
+            topMargin = top
+        }
+        closeBtn.visibility = View.VISIBLE
+
+        // 重置按钮：左上角内侧
+        resetBtn.layoutParams = FrameLayout.LayoutParams(btnSize, btnSize).apply {
+            leftMargin = left
+            topMargin = top
+        }
+        resetBtn.visibility = View.VISIBLE
+
+        // 隐藏按钮：左下角内侧
+        hideBtn.layoutParams = FrameLayout.LayoutParams(btnSize, btnSize).apply {
+            leftMargin = left
+            topMargin = bottom - btnSize
+        }
+        hideBtn.visibility = View.VISIBLE
+
+        // 确认按钮：底部居中内侧
+        val confirmLeft = (left + right) / 2 - confirmWidth / 2
+        val confirmTop = bottom - confirmHeight
+        confirmBtn.layoutParams = FrameLayout.LayoutParams(confirmWidth, confirmHeight).apply {
+            leftMargin = confirmLeft.coerceAtLeast(0)
+            topMargin = confirmTop.coerceAtLeast(0)
+        }
+        confirmBtn.visibility = View.VISIBLE
     }
 
     private fun resetCropRect() {
@@ -172,11 +191,13 @@ class CropOverlayView @JvmOverloads constructor(
         val left = (width - w) / 2
         val top = (height - h) / 2
         cropRect.set(left, top, left + w, top + h)
+        updateButtonPositions()
         invalidate()
     }
 
     fun setInitialRect(rect: Rect) {
         cropRect.set(rect)
+        updateButtonPositions()
         invalidate()
     }
 
@@ -189,7 +210,6 @@ class CropOverlayView @JvmOverloads constructor(
         val parts = str.split(",")
         if (parts.size == 4) {
             val r = Rect(parts[0].toInt(), parts[1].toInt(), parts[2].toInt(), parts[3].toInt())
-            // 校验边界
             if (r.left >= 0 && r.top >= 0 && r.right <= width && r.bottom <= height && r.width() > 0 && r.height() > 0) {
                 cropRect.set(r)
             }
@@ -204,41 +224,21 @@ class CropOverlayView @JvmOverloads constructor(
         super.onDraw(canvas)
 
         if (!hasSelection()) {
-            // 初始状态：显示提示文字和虚线框
+            // 无选区时只显示提示文字
             val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.WHITE
-                textSize = 56f
+                textSize = 48f
                 textAlign = Paint.Align.CENTER
-                // 文字阴影，增强可读性
-                setShadowLayer(10f, 0f, 4f, Color.BLACK)
+                setShadowLayer(8f, 0f, 4f, Color.BLACK)
             }
-            canvas.drawText("👆 拖动选择题目区域", width / 2f, height / 2f - 100, textPaint)
-            canvas.drawText("松开后可拖动边角调整", width / 2f, height / 2f - 20, textPaint)
-
-            // 画一个虚线框提示可交互区域
-            val hintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.parseColor("#80FFFFFF")
-                style = Paint.Style.STROKE
-                strokeWidth = 4f
-                pathEffect = android.graphics.DashPathEffect(floatArrayOf(20f, 20f), 0f)
-            }
-            val hintRect = RectF(
-                width * 0.15f, height * 0.3f,
-                width * 0.85f, height * 0.6f
-            )
-            canvas.drawRoundRect(hintRect, 20f, 20f, hintPaint)
+            canvas.drawText("拖动选择题目区域", width / 2f, height / 2f - 50, textPaint)
+            canvas.drawText("松开后可拖动边角调整", width / 2f, height / 2f + 10, textPaint)
             return
         }
 
         val r = cropRect
 
-        // 四块遮罩（挖空中间选区）
-        canvas.drawRect(0f, 0f, width.toFloat(), r.top.toFloat(), overlayPaint)
-        canvas.drawRect(0f, r.top.toFloat(), r.left.toFloat(), r.bottom.toFloat(), overlayPaint)
-        canvas.drawRect(r.right.toFloat(), r.top.toFloat(), width.toFloat(), r.bottom.toFloat(), overlayPaint)
-        canvas.drawRect(0f, r.bottom.toFloat(), width.toFloat(), height.toFloat(), overlayPaint)
-
-        // 蓝色边框
+        // 只绘制蓝色边框和角标，不绘制全屏遮罩
         canvas.drawRect(r, borderPaint)
 
         // 四角 L 形装饰线
@@ -265,6 +265,10 @@ class CropOverlayView @JvmOverloads constructor(
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
+                // 如果触摸点位于某个按钮区域，则不处理（让子View处理）
+                if (isPointInButton(x, y)) {
+                    return false
+                }
                 if (isInResizeHandle(x, y)) {
                     touchMode = TouchMode.RESIZE
                     lastX = event.x
@@ -297,11 +301,13 @@ class CropOverlayView @JvmOverloads constructor(
                         cropRect.set(newLeft, newTop, newRight, newBottom)
                         lastX = event.x
                         lastY = event.y
+                        updateButtonPositions()
                         invalidate()
                     }
                     TouchMode.RESIZE -> {
                         cropRect.right = event.x.toInt().coerceIn(cropRect.left + minCropSize, width)
                         cropRect.bottom = event.y.toInt().coerceIn(cropRect.top + minCropSize, height)
+                        updateButtonPositions()
                         invalidate()
                     }
                     else -> {}
@@ -314,6 +320,30 @@ class CropOverlayView @JvmOverloads constructor(
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    private fun isPointInButton(x: Int, y: Int): Boolean {
+        // 检查是否在按钮的矩形区域内（忽略 confirmBtn 因为它在底部，但按下时可能也会触发拖动？）
+        val closeRect = Rect(
+            cropRect.right - btnSize, cropRect.top,
+            cropRect.right, cropRect.top + btnSize
+        )
+        val resetRect = Rect(
+            cropRect.left, cropRect.top,
+            cropRect.left + btnSize, cropRect.top + btnSize
+        )
+        val hideRect = Rect(
+            cropRect.left, cropRect.bottom - btnSize,
+            cropRect.left + btnSize, cropRect.bottom
+        )
+        val confirmRect = Rect(
+            (cropRect.left + cropRect.right) / 2 - confirmWidth / 2,
+            cropRect.bottom - confirmHeight,
+            (cropRect.left + cropRect.right) / 2 + confirmWidth / 2,
+            cropRect.bottom
+        )
+        return closeRect.contains(x, y) || resetRect.contains(x, y) ||
+                hideRect.contains(x, y) || confirmRect.contains(x, y)
     }
 
     private fun isInResizeHandle(x: Int, y: Int): Boolean {
