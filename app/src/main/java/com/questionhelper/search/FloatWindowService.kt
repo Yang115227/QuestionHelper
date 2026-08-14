@@ -304,19 +304,21 @@ class FloatWindowService : Service() {
         floatBall?.visibility = View.VISIBLE
     }
 
-    // 修复后的 showResult：先隐藏悬浮球，设置回调恢复悬浮球，并处理重复添加
+    // 修复后的 showResult：先 dismiss 旧窗口，再隐藏悬浮球，避免旧回调导致的闪现
     fun showResult(question: String, answer: String, analysis: String, isMatched: Boolean) {
         try {
             if (isShowingCrop) {
                 hideCropView()
             }
-            // 隐藏悬浮球，避免遮挡结果窗
-            floatBall?.visibility = View.GONE
 
-            // 移除旧结果窗，避免重复添加
+            // 第一步：移除旧窗口（旧回调可能恢复悬浮球）
             resultView?.dismiss()
             resultView = null
 
+            // 第二步：隐藏悬浮球（确保新窗口显示时悬浮球不可见）
+            floatBall?.visibility = View.GONE
+
+            // 第三步：创建并显示新窗口，设置关闭回调
             resultView = FloatResultView(this).apply {
                 onDismiss = {
                     // 结果窗关闭后恢复悬浮球
@@ -365,6 +367,7 @@ class FloatWindowService : Service() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "captureAndSearch failed", e)
+            // 显示错误并恢复悬浮球（showResult 内部会处理）
             showResult(
                 "⚠️ 启动截图失败",
                 "错误信息：${e.message}",
