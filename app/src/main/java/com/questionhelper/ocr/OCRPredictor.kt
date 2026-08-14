@@ -22,6 +22,10 @@ class OCRPredictor(context: Context, assetPath: String) {
     // 调试开关：true 表示跳过检测，直接识别整张图；false 恢复正常流程
     private val DEBUG_SKIP_DET = true
 
+    // 用于存储调试信息，OcrManager 可以读取
+    var debugInfo: String? = null
+        private set
+
     private val detInputShape = intArrayOf(1, 3, 480, 480)
     private val recInputShape = intArrayOf(1, 3, 48, 320)
 
@@ -191,6 +195,26 @@ class OCRPredictor(context: Context, assetPath: String) {
         val outputTensor = predictor.getOutput(0)
         val outputData = outputTensor.getFloatData()
         val outputShape = outputTensor.shape()
+
+        // 生成调试信息
+        val shapeStr = outputShape.joinToString("x")
+        val numSteps = outputShape[1].toInt()
+        val numClasses = outputShape[2].toInt()
+        val maxIndices = IntArray(minOf(10, numSteps)) { t ->
+            var maxIdx = 0
+            var maxVal = -Float.MAX_VALUE
+            for (c in 0 until numClasses) {
+                val v = outputData[t * numClasses + c]
+                if (v > maxVal) {
+                    maxVal = v
+                    maxIdx = c
+                }
+            }
+            maxIdx
+        }
+        val maxIdxStr = maxIndices.joinToString(",")
+        debugInfo = "字典=${wordLabels.size}, 输出形状=$shapeStr, 前10步最大索引=[$maxIdxStr]"
+        Log.d(tag, debugInfo!!)
 
         return decodeRecOutput(outputData, outputShape)
     }
