@@ -274,10 +274,14 @@ class ScreenCaptureService : Service() {
             Log.w(tag, "Capture called but not initialized")
             return null
         }
-        repeat(5) { attempt ->
+        Thread.sleep(300)
+        repeat(10) { attempt ->
             var image: Image? = null
             try {
                 image = imageReader?.acquireLatestImage()
+                if (image == null) {
+                    image = imageReader?.acquireNextImage()
+                }
                 if (image != null) {
                     Log.d(tag, "Capture attempt $attempt: image acquired ${image.width}x${image.height}")
                     val bitmap = imageToBitmap(image)
@@ -297,11 +301,9 @@ class ScreenCaptureService : Service() {
             } catch (e: Exception) {
                 Log.e(tag, "Capture attempt $attempt failed", e)
             } finally {
-                try {
-                    image?.close()
-                } catch (_: Throwable) {}
+                try { image?.close() } catch (_: Throwable) {}
             }
-            Thread.sleep(200)
+            Thread.sleep(500)
         }
         Log.e(tag, "All capture attempts failed")
         return null
@@ -414,29 +416,63 @@ class ScreenCaptureService : Service() {
                 }
             } catch (e: Throwable) {
                 Log.e(tag, "OCR failed", e)
-                showError("文字识别失败", "错误：${e.message}\n请检查 OCR 模型或重试")
+                showError("文字识别失败", "错误：${e.message}")
             }
         }
     }
 
-    /**
-     * 关键修复：通过广播显示错误，替代可能被系统拦截的 Toast
-     */
     private fun showError(title: String, message: String) {
         Log.e(tag, "Error: $title - $message")
-        // 双保险：尝试 Toast（可能在部分系统上有效）
+
+        try {
+            sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
+                putExtra(FloatWindowService.EXTRA_QUESTION, "⚠️ $title")
+                putExtra(FloatWindowService.EXTRA_ANSWER, message)
+                putExtra(FloatWindowService.EXTRA_ANALYSIS, "点击悬浮球重新尝试框选")
+                putExtra(FloatWindowService.EXTRA_MATCHED, false)
+            })
+        } catch (_: Exception) {}
+
         handler.post {
             try {
-                Toast.makeText(this@ScreenCaptureService, "$title: $message", Toast.LENGTH_LONG).show()
-            } catch (_: Throwable) {}
+                val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+                val layout = android.widget.LinearLayout(this@ScreenCaptureService).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    setPadding(60, 60, 60, 60)
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        cornerRadius = 32f
+                        setColor(0xE6000000.toInt())
+                    }
+                    addView(android.widget.TextView(this@ScreenCaptureService).apply {
+                        this.text = "⚠️ $title"
+                        textSize = 18f
+                        setTextColor(0xFFFF5252.toInt())
+                        setPadding(0, 0, 0, 16)
+                    })
+                    addView(android.widget.TextView(this@ScreenCaptureService).apply {
+                        this.text = message
+                        textSize = 15f
+                        setTextColor(0xFFFFFFFF.toInt())
+                    })
+                }
+                val params = android.view.WindowManager.LayoutParams(
+                    800,
+                    android.view.WindowManager.LayoutParams.WRAP_CONTENT,
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                        android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                    else
+                        android.view.WindowManager.LayoutParams.TYPE_PHONE,
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                    android.graphics.PixelFormat.TRANSLUCENT
+                ).apply {
+                    gravity = android.view.Gravity.CENTER
+                }
+                wm.addView(layout, params)
+                handler.postDelayed({
+                    try { wm.removeView(layout) } catch (_: Exception) {}
+                }, 6000)
+            } catch (_: Exception) {}
         }
-        // 主方案：发送广播让 FloatWindowService 显示结果窗
-        sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
-            putExtra(FloatWindowService.EXTRA_QUESTION, "⚠️ $title")
-            putExtra(FloatWindowService.EXTRA_ANSWER, message)
-            putExtra(FloatWindowService.EXTRA_ANALYSIS, "点击悬浮球重新尝试框选")
-            putExtra(FloatWindowService.EXTRA_MATCHED, false)
-        })
     }
 
     private fun releaseProjection() {
