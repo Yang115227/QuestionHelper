@@ -127,7 +127,14 @@ class CropOverlayView @JvmOverloads constructor(
             }
             setOnClickListener {
                 if (cropRect.width() >= minCropSize && cropRect.height() >= minCropSize) {
-                    // 保存记忆
+                    // 关键修复：立即给用户视觉反馈，防止以为没点到
+                    this.text = "正在识别..."
+                    this.isEnabled = false
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = dpToPx(24).toFloat()
+                        setColor(Color.parseColor("#757575"))
+                    }
                     saveCropRect()
                     onCropConfirmed?.invoke(cropRect)
                 }
