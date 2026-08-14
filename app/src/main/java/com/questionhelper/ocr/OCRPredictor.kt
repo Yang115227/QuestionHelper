@@ -21,8 +21,10 @@ class OCRPredictor(context: Context, assetPath: String) {
 
     private val detInputShape = intArrayOf(1, 3, 480, 480)
     private val recInputShape = intArrayOf(1, 3, 48, 320)
-    private val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
-    private val std = floatArrayOf(0.229f, 0.224f, 0.225f)
+
+    // 关键修正：PaddleOCR 模型通常使用 mean=0.5, std=0.5
+    private val mean = floatArrayOf(0.5f, 0.5f, 0.5f)
+    private val std = floatArrayOf(0.5f, 0.5f, 0.5f)
 
     init {
         Log.d(tag, "OCRPredictor 开始初始化")
@@ -72,8 +74,13 @@ class OCRPredictor(context: Context, assetPath: String) {
 
     private fun loadLabels() {
         try {
-            context.assets.open("$assetPath/ppocr_keys_v1.txt").bufferedReader().useLines { lines ->
-                lines.forEach { wordLabels.add(it) }
+            context.assets.open("$assetPath/ppocr_keys_v1.txt").bufferedReader(Charsets.UTF_8).useLines { lines ->
+                lines.forEach { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.isNotEmpty()) {
+                        wordLabels.add(trimmed)
+                    }
+                }
             }
             Log.d(tag, "标签加载完成，共 ${wordLabels.size} 个")
         } catch (e: Exception) {
@@ -146,11 +153,10 @@ class OCRPredictor(context: Context, assetPath: String) {
     }
 
     private fun runRecognition(bitmap: Bitmap, predictor: PaddlePredictor): String {
-        val h = recInputShape[2]
-        val w = recInputShape[3]
-        val scaledBitmap = Bitmap.createScaledBitmap(bitmap, w, h, true)
-        val inputData = bitmapToFloatArray(scaledBitmap, h, w)
-        scaledBitmap.recycle()
+        // 等比例缩放并填充到模型输入尺寸 (48x320)，避免文字变形
+        val resizedBitmap = resizeAndPad(bitmap, recInputShape[3], recInputShape[2])
+        val inputData = bitmapToFloatArray(resizedBitmap, recInputShape[2], recInputShape[3])
+        resizedBitmap.recycle()
 
         val inputTensor = predictor.getInput(0)
         inputTensor.resize(recInputShape.map { it.toLong() }.toLongArray())
@@ -162,6 +168,28 @@ class OCRPredictor(context: Context, assetPath: String) {
         val outputShape = outputTensor.shape()
 
         return decodeRecOutput(outputData, outputShape)
+    }
+
+    /**
+     * 等比例缩放并填充（白色背景）
+     */
+    private fun resizeAndPad(src: Bitmap, targetW: Int, targetH: Int): Bitmap {
+        val srcW = src.width
+        val srcH = src.height
+        val scale = min(targetW.toFloat() / srcW, targetH.toFloat() / srcH)
+        val newW = (srcW * scale).toInt()
+        val newH = (srcH * scale).toInt()
+
+        val scaled = Bitmap.createScaledBitmap(src, newW, newH, true)
+
+        val outBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(outBitmap)
+        canvas.drawColor(android.graphics.Color.WHITE)
+        val left = (targetW - newW) / 2
+        val top = (targetH - newH) / 2
+        canvas.drawBitmap(scaled, left.toFloat(), top.toFloat(), null)
+        scaled.recycle()
+        return outBitmap
     }
 
     private fun decodeRecOutput(data: FloatArray, shape: LongArray): String {
@@ -180,6 +208,7 @@ class OCRPredictor(context: Context, assetPath: String) {
                     maxIdx = c
                 }
             }
+            // idx=0 是 CTC blank，跳过；去重
             if (maxIdx != 0 && maxIdx != lastIndex && maxIdx - 1 < wordLabels.size) {
                 sb.append(wordLabels[maxIdx - 1])
             }
