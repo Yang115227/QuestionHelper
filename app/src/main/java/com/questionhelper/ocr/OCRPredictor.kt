@@ -92,7 +92,6 @@ class OCRPredictor(context: Context, assetPath: String) {
                     }
                 }
             Log.d(tag, "标签加载完成，共 ${wordLabels.size} 个")
-            // 打印前10个标签（可通过 Toast 查看，但这里仅 Log）
             Log.d(tag, "前10个标签: ${wordLabels.take(10).joinToString(",")}")
         } catch (e: Exception) {
             Log.e(tag, "标签加载失败", e)
