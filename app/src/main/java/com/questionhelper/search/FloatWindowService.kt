@@ -307,7 +307,6 @@ class FloatWindowService : Service() {
 
     fun showResult(question: String, answer: String, analysis: String, isMatched: Boolean) {
         try {
-            // 如果正在显示框选层，先关闭它，避免结果窗被挡住
             if (isShowingCrop) {
                 hideCropView()
             }
@@ -343,7 +342,13 @@ class FloatWindowService : Service() {
                 startService(intent)
             }
             else -> {
-                Toast.makeText(this, R.string.screenshot_service_not_ready, Toast.LENGTH_SHORT).show()
+                // 关键修复：用悬浮结果窗替代 Toast，确保用户能看到
+                showResult(
+                    "⚠️ 截图服务未就绪",
+                    "录屏权限可能已被系统回收，或无障碍服务未开启。\n请重新点击「悬浮搜题」选择截图方式。",
+                    "",
+                    false
+                )
                 floatBall?.visibility = View.VISIBLE
             }
         }
