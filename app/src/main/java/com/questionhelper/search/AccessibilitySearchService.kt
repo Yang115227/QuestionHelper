@@ -88,7 +88,7 @@ class AccessibilitySearchService : AccessibilityService() {
 
     private fun handleCaptureRequest(rect: Rect) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            Toast.makeText(this, R.string.accessibility_screenshot_requires_android_11, Toast.LENGTH_LONG).show()
+            showError("系统版本过低", "无障碍截图需要 Android 11 及以上系统")
             return
         }
         if (!isConnected) {
@@ -124,23 +124,11 @@ class AccessibilitySearchService : AccessibilityService() {
                                 processScreenshotBitmap(bitmap, rect)
                             } else {
                                 Log.e(TAG, "Screenshot bitmap is null")
-                                handler.post {
-                                    Toast.makeText(
-                                        this@AccessibilitySearchService,
-                                        getString(R.string.screenshot_reflection_failed, "Bitmap extraction returned null"),
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
+                                showError("截图失败", "无法从系统截图结果中提取图像，请尝试使用录屏截图方式")
                             }
                         } catch (e: Throwable) {
                             Log.e(TAG, "Process screenshot result failed", e)
-                            handler.post {
-                                Toast.makeText(
-                                    this@AccessibilitySearchService,
-                                    R.string.screenshot_crop_failed,
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
+                            showError("截图处理失败", "错误：${e.message}")
                         } finally {
                             releaseScreenshotResult(result)
                         }
@@ -149,13 +137,7 @@ class AccessibilitySearchService : AccessibilityService() {
                         val errorCode = args?.getOrNull(0)
                         executor.shutdown()
                         Log.e(TAG, "Screenshot onFailure: $errorCode")
-                        handler.post {
-                            Toast.makeText(
-                                this@AccessibilitySearchService,
-                                getString(R.string.screenshot_failed_error_code, errorCode),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
+                        showError("系统截图失败", "错误码：$errorCode\n无障碍截图可能被系统限制，请尝试录屏截图方式")
                     }
                 }
                 null
@@ -163,13 +145,7 @@ class AccessibilitySearchService : AccessibilityService() {
             method.invoke(this, Display.DEFAULT_DISPLAY, executor, proxy)
         } catch (e: Throwable) {
             Log.e(TAG, "takeScreenshot failed", e)
-            handler.post {
-                Toast.makeText(
-                    this@AccessibilitySearchService,
-                    getString(R.string.screenshot_failed_restricted),
-                    Toast.LENGTH_LONG
-                ).show()
-            }
+            showError("无障碍截图不可用", "错误：${e.message}\n请尝试使用录屏截图方式")
         }
     }
 
@@ -299,9 +275,7 @@ class AccessibilitySearchService : AccessibilityService() {
             )
             if (safeRect.width() <= 0 || safeRect.height() <= 0) {
                 bitmap.recycle()
-                handler.post {
-                    Toast.makeText(this, R.string.screenshot_invalid_area, Toast.LENGTH_SHORT).show()
-                }
+                showError("框选区域无效", "所选区域超出屏幕范围或面积为零")
                 return
             }
 
@@ -321,9 +295,7 @@ class AccessibilitySearchService : AccessibilityService() {
         } catch (e: Throwable) {
             Log.e(TAG, "Crop screenshot failed", e)
             bitmap.recycle()
-            handler.post {
-                Toast.makeText(this, R.string.screenshot_crop_failed, Toast.LENGTH_SHORT).show()
-            }
+            showError("截图裁剪失败", "错误：${e.message}")
         }
     }
 
@@ -333,9 +305,7 @@ class AccessibilitySearchService : AccessibilityService() {
         if (!manager.isReady) {
             val error = manager.initError ?: "未知错误"
             Log.e(TAG, "OCR 未就绪: $error")
-            handler.post {
-                Toast.makeText(this, "OCR 未初始化\n$error", Toast.LENGTH_LONG).show()
-            }
+            showError("OCR 未初始化", "错误：$error\n请检查模型文件是否完整")
             bitmap.recycle()
             return
         }
@@ -365,16 +335,71 @@ class AccessibilitySearchService : AccessibilityService() {
                         putExtra(FloatWindowService.EXTRA_MATCHED, isMatched)
                     })
                 } else {
-                    handler.post {
-                        Toast.makeText(this@AccessibilitySearchService, "未识别到文字，请确保框选区域包含清晰的文字", Toast.LENGTH_LONG).show()
-                    }
+                    showError("未识别到文字", "OCR 未能识别出文字，请确保：\n1. 框选区域包含清晰的文字\n2. 文字与背景对比度足够\n3. 图片没有过度模糊")
                 }
             } catch (e: Throwable) {
                 Log.e(TAG, "OCR failed", e)
-                handler.post {
-                    Toast.makeText(this@AccessibilitySearchService, "文字识别失败：${e.message}", Toast.LENGTH_LONG).show()
-                }
+                showError("文字识别失败", "错误：${e.message}")
             }
+        }
+    }
+
+    /**
+     * 关键修复：直接显示错误悬浮窗（不依赖 Broadcast，避免被系统拦截）
+     */
+    private fun showError(title: String, message: String) {
+        Log.e(TAG, "Error: $title - $message")
+
+        // 方案1：尝试发送广播
+        try {
+            sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
+                putExtra(FloatWindowService.EXTRA_QUESTION, "⚠️ $title")
+                putExtra(FloatWindowService.EXTRA_ANSWER, message)
+                putExtra(FloatWindowService.EXTRA_ANALYSIS, "点击悬浮球重新尝试框选")
+                putExtra(FloatWindowService.EXTRA_MATCHED, false)
+            })
+        } catch (_: Exception) {}
+
+        // 方案2：Service 自己直接显示临时悬浮窗（更可靠）
+        handler.post {
+            try {
+                val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+                val layout = android.widget.LinearLayout(this@AccessibilitySearchService).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    setPadding(60, 60, 60, 60)
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        cornerRadius = 32f
+                        setColor(0xE6000000.toInt())
+                    }
+                    addView(android.widget.TextView(this@AccessibilitySearchService).apply {
+                        this.text = "⚠️ $title"
+                        textSize = 18f
+                        setTextColor(0xFFFF5252.toInt())
+                        setPadding(0, 0, 0, 16)
+                    })
+                    addView(android.widget.TextView(this@AccessibilitySearchService).apply {
+                        this.text = message
+                        textSize = 15f
+                        setTextColor(0xFFFFFFFF.toInt())
+                    })
+                }
+                val params = android.view.WindowManager.LayoutParams(
+                    800,
+                    android.view.WindowManager.LayoutParams.WRAP_CONTENT,
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                        android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                    else
+                        android.view.WindowManager.LayoutParams.TYPE_PHONE,
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                    android.graphics.PixelFormat.TRANSLUCENT
+                ).apply {
+                    gravity = android.view.Gravity.CENTER
+                }
+                wm.addView(layout, params)
+                handler.postDelayed({
+                    try { wm.removeView(layout) } catch (_: Exception) {}
+                }, 6000)
+            } catch (_: Exception) {}
         }
     }
 
