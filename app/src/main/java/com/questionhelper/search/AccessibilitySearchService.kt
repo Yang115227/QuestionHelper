@@ -329,6 +329,7 @@ class AccessibilitySearchService : AccessibilityService() {
                     Log.d(TAG, "Search result: matched=$isMatched")
 
                     sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
+                        setPackage(packageName)
                         putExtra(FloatWindowService.EXTRA_QUESTION, questionText)
                         putExtra(FloatWindowService.EXTRA_ANSWER, answerText)
                         putExtra(FloatWindowService.EXTRA_ANALYSIS, analysisText)
@@ -344,15 +345,13 @@ class AccessibilitySearchService : AccessibilityService() {
         }
     }
 
-    /**
-     * 关键修复：直接显示错误悬浮窗（不依赖 Broadcast，避免被系统拦截）
-     */
     private fun showError(title: String, message: String) {
         Log.e(TAG, "Error: $title - $message")
 
-        // 方案1：尝试发送广播
+        // 只发送广播，让 FloatWindowService 显示错误结果窗
         try {
             sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
+                setPackage(packageName)
                 putExtra(FloatWindowService.EXTRA_QUESTION, "⚠️ $title")
                 putExtra(FloatWindowService.EXTRA_ANSWER, message)
                 putExtra(FloatWindowService.EXTRA_ANALYSIS, "点击悬浮球重新尝试框选")
@@ -360,46 +359,9 @@ class AccessibilitySearchService : AccessibilityService() {
             })
         } catch (_: Exception) {}
 
-        // 方案2：Service 自己直接显示临时悬浮窗（更可靠）
+        // 可选：添加 Toast 作为兜底
         handler.post {
-            try {
-                val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
-                val layout = android.widget.LinearLayout(this@AccessibilitySearchService).apply {
-                    orientation = android.widget.LinearLayout.VERTICAL
-                    setPadding(60, 60, 60, 60)
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        cornerRadius = 32f
-                        setColor(0xE6000000.toInt())
-                    }
-                    addView(android.widget.TextView(this@AccessibilitySearchService).apply {
-                        this.text = "⚠️ $title"
-                        textSize = 18f
-                        setTextColor(0xFFFF5252.toInt())
-                        setPadding(0, 0, 0, 16)
-                    })
-                    addView(android.widget.TextView(this@AccessibilitySearchService).apply {
-                        this.text = message
-                        textSize = 15f
-                        setTextColor(0xFFFFFFFF.toInt())
-                    })
-                }
-                val params = android.view.WindowManager.LayoutParams(
-                    800,
-                    android.view.WindowManager.LayoutParams.WRAP_CONTENT,
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                        android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                    else
-                        android.view.WindowManager.LayoutParams.TYPE_PHONE,
-                    android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                    android.graphics.PixelFormat.TRANSLUCENT
-                ).apply {
-                    gravity = android.view.Gravity.CENTER
-                }
-                wm.addView(layout, params)
-                handler.postDelayed({
-                    try { wm.removeView(layout) } catch (_: Exception) {}
-                }, 6000)
-            } catch (_: Exception) {}
+            Toast.makeText(this, "$title: $message", Toast.LENGTH_LONG).show()
         }
     }
 
