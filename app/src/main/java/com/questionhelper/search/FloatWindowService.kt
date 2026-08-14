@@ -45,7 +45,6 @@ class FloatWindowService : Service() {
         private const val CHANNEL_ID = "float_window"
         private const val NOTIFICATION_ID = 1002
 
-        // 统一广播 action
         const val ACTION_SHOW_RESULT = "com.questionhelper.SHOW_RESULT"
         const val EXTRA_QUESTION = "question"
         const val EXTRA_ANSWER = "answer"
@@ -253,8 +252,14 @@ class FloatWindowService : Service() {
     private fun showCropView() {
         if (isShowingCrop) return
         isShowingCrop = true
-        floatBall?.visibility = View.GONE
+
+        // 重要：先移除旧的结果窗口，但避免其 onDismiss 恢复悬浮球
+        resultView?.setDismissCallback(null)   // 临时禁用回调
         resultView?.dismiss()
+        resultView = null
+
+        // 现在再隐藏悬浮球
+        floatBall?.visibility = View.GONE
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -305,23 +310,23 @@ class FloatWindowService : Service() {
         floatBall?.visibility = View.VISIBLE
     }
 
-    // 修复后的 showResult：先移除旧窗口，再隐藏悬浮球，最后显示新窗口
     fun showResult(question: String, answer: String, analysis: String, isMatched: Boolean) {
         try {
             if (isShowingCrop) {
                 hideCropView()
             }
 
-            // 先移除旧窗口，旧回调可能会恢复悬浮球
+            // 移除旧结果窗口，同时禁用回调避免误恢复悬浮球
+            resultView?.setDismissCallback(null)
             resultView?.dismiss()
             resultView = null
 
-            // 隐藏悬浮球，确保新窗口显示时悬浮球不可见
+            // 确保悬浮球隐藏
             floatBall?.visibility = View.GONE
 
-            // 创建新窗口并设置关闭回调
+            // 创建新窗口，设置回调
             resultView = FloatResultView(this).apply {
-                onDismiss = {
+                setDismissCallback {
                     floatBall?.visibility = View.VISIBLE
                 }
             }
@@ -433,6 +438,7 @@ class FloatWindowService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         hideCropView()
+        resultView?.setDismissCallback(null)
         resultView?.dismiss()
         floatBall?.let {
             try { windowManager.removeView(it) } catch (_: Exception) {}
