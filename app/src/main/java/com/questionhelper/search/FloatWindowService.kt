@@ -45,6 +45,7 @@ class FloatWindowService : Service() {
         private const val CHANNEL_ID = "float_window"
         private const val NOTIFICATION_ID = 1002
 
+        // 统一广播 action（请确保 ScreenCaptureService 等发送端使用相同常量）
         const val ACTION_SHOW_RESULT = "com.questionhelper.SHOW_RESULT"
         const val EXTRA_QUESTION = "question"
         const val EXTRA_ANSWER = "answer"
@@ -91,7 +92,6 @@ class FloatWindowService : Service() {
                         handler.post { Toast.makeText(context, error, Toast.LENGTH_LONG).show() }
                     }
                 }
-                // 关键修复：添加 ACTION_SHOW_RESULT 的处理
                 ACTION_SHOW_RESULT -> {
                     val question = intent.getStringExtra(EXTRA_QUESTION) ?: ""
                     val answer = intent.getStringExtra(EXTRA_ANSWER) ?: ""
@@ -127,7 +127,6 @@ class FloatWindowService : Service() {
             val filter = IntentFilter().apply {
                 addAction(ScreenCaptureService.ACTION_PROJECTION_READY)
                 addAction(ScreenCaptureService.ACTION_PROJECTION_STOPPED)
-                // 关键修复：注册 ACTION_SHOW_RESULT
                 addAction(ACTION_SHOW_RESULT)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -276,11 +275,9 @@ class FloatWindowService : Service() {
             onCropConfirmed = { rect ->
                 saveCropRect(rect)
                 removeCropViewOnly()
-                handler.postDelayed({
-                    captureAndSearch(rect)
-                    floatBall?.visibility = View.VISIBLE
-                    isShowingCrop = false
-                }, 200)
+                isShowingCrop = false
+                floatBall?.visibility = View.VISIBLE   // 立即恢复悬浮球，让用户知道可以继续操作
+                captureAndSearch(rect)
             }
             onCropCanceled = { hideCropView() }
         }
@@ -307,52 +304,73 @@ class FloatWindowService : Service() {
         floatBall?.visibility = View.VISIBLE
     }
 
-    // 关键修复：恢复 showResult 方法
+    // 修复后的 showResult：先隐藏悬浮球，设置回调恢复悬浮球，并处理重复添加
     fun showResult(question: String, answer: String, analysis: String, isMatched: Boolean) {
         try {
             if (isShowingCrop) {
                 hideCropView()
             }
-            if (resultView == null) {
-                resultView = FloatResultView(this)
+            // 隐藏悬浮球，避免遮挡结果窗
+            floatBall?.visibility = View.GONE
+
+            // 移除旧结果窗，避免重复添加
+            resultView?.dismiss()
+            resultView = null
+
+            resultView = FloatResultView(this).apply {
+                onDismiss = {
+                    // 结果窗关闭后恢复悬浮球
+                    floatBall?.visibility = View.VISIBLE
+                }
             }
             resultView?.show(question, answer, analysis, isMatched)
         } catch (e: Exception) {
             Log.e(TAG, "showResult failed", e)
+            // 异常时恢复悬浮球
+            floatBall?.visibility = View.VISIBLE
             Toast.makeText(this, "显示结果失败：${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun captureAndSearch(rect: Rect) {
         Log.d(TAG, "captureAndSearch: $rect")
-        when {
-            ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized -> {
-                val intent = Intent(this, ScreenCaptureService::class.java).apply {
-                    action = ScreenCaptureService.ACTION_CAPTURE
-                    putExtra("rect", rect)
+        try {
+            when {
+                ScreenCaptureService.isRunning && ScreenCaptureService.isInitialized -> {
+                    val intent = Intent(this, ScreenCaptureService::class.java).apply {
+                        action = ScreenCaptureService.ACTION_CAPTURE
+                        putExtra("rect", rect)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        ContextCompat.startForegroundService(this, intent)
+                    } else {
+                        startService(intent)
+                    }
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    ContextCompat.startForegroundService(this, intent)
-                } else {
+                isAccessibilityServiceEnabled() -> {
+                    val intent = Intent(this, AccessibilitySearchService::class.java).apply {
+                        action = "CAPTURE"
+                        putExtra("rect", rect)
+                    }
                     startService(intent)
                 }
-            }
-            isAccessibilityServiceEnabled() -> {
-                val intent = Intent(this, AccessibilitySearchService::class.java).apply {
-                    action = "CAPTURE"
-                    putExtra("rect", rect)
+                else -> {
+                    showResult(
+                        "⚠️ 截图服务未就绪",
+                        "录屏权限可能已被系统回收，或无障碍服务未开启。\n请重新点击「悬浮搜题」选择截图方式。",
+                        "",
+                        false
+                    )
                 }
-                startService(intent)
             }
-            else -> {
-                showResult(
-                    "⚠️ 截图服务未就绪",
-                    "录屏权限可能已被系统回收，或无障碍服务未开启。\n请重新点击「悬浮搜题」选择截图方式。",
-                    "",
-                    false
-                )
-                floatBall?.visibility = View.VISIBLE
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "captureAndSearch failed", e)
+            showResult(
+                "⚠️ 启动截图失败",
+                "错误信息：${e.message}",
+                "",
+                false
+            )
         }
     }
 
