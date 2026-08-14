@@ -89,10 +89,9 @@ class OCRPredictor(context: Context, assetPath: String) {
                 .bufferedReader(Charsets.UTF_8)
                 .useLines { lines ->
                     lines.forEach { line ->
-                        val trimmed = line.trim()
-                        if (trimmed.isNotEmpty()) {
-                            wordLabels.add(trimmed)
-                        }
+                        // 关键：只移除行尾换行符，保留所有行（包括空格和空行），
+                        // 确保字典行数与模型输出类别数一致（通常是 6625）
+                        wordLabels.add(line.removeSuffix("\n").removeSuffix("\r"))
                     }
                 }
             Log.d(tag, "标签加载完成，共 ${wordLabels.size} 个")
