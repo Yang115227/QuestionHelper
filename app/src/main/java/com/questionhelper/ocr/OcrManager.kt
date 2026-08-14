@@ -8,6 +8,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class OcrManager(context: Context) {
+
+    // 保存 applicationContext，供类内部使用
+    private val appContext: Context = context.applicationContext
+
     private var predictor: OCRPredictor? = null
     private val tag = "OcrManager"
 
@@ -19,7 +23,7 @@ class OcrManager(context: Context) {
         get() = predictor != null
 
     init {
-        initPredictor(context)
+        initPredictor(appContext)
     }
 
     private fun initPredictor(context: Context) {
@@ -101,7 +105,7 @@ class OcrManager(context: Context) {
             // 显示识别结果长度和前20字，便于调试
             withContext(Dispatchers.Main) {
                 Toast.makeText(
-                    context,
+                    appContext,
                     "OCR长度:${text.length} 前20字:${text.take(20)}",
                     Toast.LENGTH_SHORT
                 ).show()
@@ -110,7 +114,7 @@ class OcrManager(context: Context) {
         } catch (e: Throwable) {
             Log.e(tag, "识别失败: ${e.message}", e)
             withContext(Dispatchers.Main) {
-                Toast.makeText(context, "OCR失败:${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(appContext, "OCR失败:${e.message}", Toast.LENGTH_SHORT).show()
             }
             ""
         }
