@@ -158,7 +158,7 @@ class ScreenCaptureService : Service() {
         isInitialized = true
         isInitializing = false
         lastError = null
-        sendBroadcast(Intent(ACTION_PROJECTION_READY))
+        sendBroadcast(Intent(ACTION_PROJECTION_READY).apply { setPackage(packageName) })
         return START_STICKY
     }
 
@@ -176,6 +176,7 @@ class ScreenCaptureService : Service() {
             Toast.makeText(this, getString(R.string.screen_capture_init_failed_with_reason, error), Toast.LENGTH_LONG).show()
         }
         sendBroadcast(Intent(ACTION_PROJECTION_STOPPED).apply {
+            setPackage(packageName)
             putExtra(EXTRA_ERROR, error)
         })
     }
@@ -197,7 +198,7 @@ class ScreenCaptureService : Service() {
                     isInitialized = false
                     isInitializing = false
                     releaseProjection()
-                    sendBroadcast(Intent(ACTION_PROJECTION_STOPPED))
+                    sendBroadcast(Intent(ACTION_PROJECTION_STOPPED).apply { setPackage(packageName) })
                 }
             }, handler)
 
@@ -406,6 +407,7 @@ class ScreenCaptureService : Service() {
                     Log.d(tag, "Search result: matched=$isMatched, question=${questionText.take(20)}")
 
                     sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
+                        setPackage(packageName)
                         putExtra(FloatWindowService.EXTRA_QUESTION, questionText)
                         putExtra(FloatWindowService.EXTRA_ANSWER, answerText)
                         putExtra(FloatWindowService.EXTRA_ANALYSIS, analysisText)
@@ -424,8 +426,10 @@ class ScreenCaptureService : Service() {
     private fun showError(title: String, message: String) {
         Log.e(tag, "Error: $title - $message")
 
+        // 只发送广播，让 FloatWindowService 显示错误结果窗
         try {
             sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
+                setPackage(packageName)
                 putExtra(FloatWindowService.EXTRA_QUESTION, "⚠️ $title")
                 putExtra(FloatWindowService.EXTRA_ANSWER, message)
                 putExtra(FloatWindowService.EXTRA_ANALYSIS, "点击悬浮球重新尝试框选")
@@ -433,45 +437,9 @@ class ScreenCaptureService : Service() {
             })
         } catch (_: Exception) {}
 
+        // 可选：添加 Toast 作为兜底
         handler.post {
-            try {
-                val wm = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
-                val layout = android.widget.LinearLayout(this@ScreenCaptureService).apply {
-                    orientation = android.widget.LinearLayout.VERTICAL
-                    setPadding(60, 60, 60, 60)
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        cornerRadius = 32f
-                        setColor(0xE6000000.toInt())
-                    }
-                    addView(android.widget.TextView(this@ScreenCaptureService).apply {
-                        this.text = "⚠️ $title"
-                        textSize = 18f
-                        setTextColor(0xFFFF5252.toInt())
-                        setPadding(0, 0, 0, 16)
-                    })
-                    addView(android.widget.TextView(this@ScreenCaptureService).apply {
-                        this.text = message
-                        textSize = 15f
-                        setTextColor(0xFFFFFFFF.toInt())
-                    })
-                }
-                val params = android.view.WindowManager.LayoutParams(
-                    800,
-                    android.view.WindowManager.LayoutParams.WRAP_CONTENT,
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                        android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                    else
-                        android.view.WindowManager.LayoutParams.TYPE_PHONE,
-                    android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                    android.graphics.PixelFormat.TRANSLUCENT
-                ).apply {
-                    gravity = android.view.Gravity.CENTER
-                }
-                wm.addView(layout, params)
-                handler.postDelayed({
-                    try { wm.removeView(layout) } catch (_: Exception) {}
-                }, 6000)
-            } catch (_: Exception) {}
+            Toast.makeText(this, "$title: $message", Toast.LENGTH_LONG).show()
         }
     }
 
