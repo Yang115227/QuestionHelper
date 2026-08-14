@@ -9,7 +9,6 @@ import kotlinx.coroutines.withContext
 
 class OcrManager(context: Context) {
 
-    // 保存 applicationContext，供类内部使用
     private val appContext: Context = context.applicationContext
 
     private var predictor: OCRPredictor? = null
@@ -102,13 +101,21 @@ class OcrManager(context: Context) {
         try {
             val results = p.runOcr(bitmap)
             val text = results.joinToString("\n") { it.text }
-            // 显示识别结果长度和前20字，便于调试
-            withContext(Dispatchers.Main) {
-                Toast.makeText(
-                    appContext,
-                    "OCR长度:${text.length} 前20字:${text.take(20)}",
-                    Toast.LENGTH_SHORT
-                ).show()
+
+            // 如果结果为空，显示调试信息
+            if (text.isEmpty()) {
+                val debug = p.debugInfo ?: "无调试信息"
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(appContext, "OCR识别为空，调试: $debug", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        appContext,
+                        "OCR长度:${text.length} 前20字:${text.take(20)}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
             text
         } catch (e: Throwable) {
