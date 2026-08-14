@@ -15,19 +15,26 @@ class FloatResultView(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var container: FrameLayout? = null
     private var isShowing = false
+    private var dismissCallback: (() -> Unit)? = null
 
-    // 关闭回调，用于通知服务恢复悬浮球
-    var onDismiss: (() -> Unit)? = null
+    // 用于缩放的变量
+    private var scaleTouchListener: View.OnTouchListener? = null
 
     companion object {
         private const val TAG = "FloatResultView"
         private const val AUTO_DISMISS_DELAY = 30000L
+        private const val MIN_WIDTH_DP = 280
+        private const val MIN_HEIGHT_DP = 200
+        private const val MAX_WIDTH_DP = 500
+        private const val MAX_HEIGHT_DP = 600
+    }
+
+    fun setDismissCallback(callback: (() -> Unit)?) {
+        dismissCallback = callback
     }
 
     fun show(question: String, answer: String, analysis: String, isMatched: Boolean) {
-        if (isShowing) {
-            dismiss()
-        }
+        if (isShowing) dismiss()
 
         val root = FrameLayout(context).apply {
             setBackgroundColor(0x00000000)
@@ -73,7 +80,7 @@ class FloatResultView(private val context: Context) {
         val scrollView = ScrollView(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dpToPx(320)
+                dpToPx(320) // 初始高度，之后可调整
             )
             setBackgroundColor(0x00FFFFFF)
         }
@@ -109,14 +116,29 @@ class FloatResultView(private val context: Context) {
         card.addView(scrollView)
         root.addView(card)
 
+        // 右下角缩放手柄
+        val resizeHandle = TextView(context).apply {
+            text = "◢"
+            textSize = 24f
+            setTextColor(0xFF999999.toInt())
+            gravity = Gravity.CENTER
+            layoutParams = FrameLayout.LayoutParams(dpToPx(36), dpToPx(36)).apply {
+                gravity = Gravity.BOTTOM or Gravity.END
+                bottomMargin = dpToPx(8)
+                rightMargin = dpToPx(8)
+            }
+        }
+        root.addView(resizeHandle)
+
         val screenWidth = context.resources.displayMetrics.widthPixels
-        val maxWidth = dpToPx(400)
-        val minWidth = dpToPx(280)
-        val width = (screenWidth * 0.85f).toInt().coerceIn(minWidth, maxWidth)
+        val screenHeight = context.resources.displayMetrics.heightPixels
+        val maxWidth = dpToPx(MAX_WIDTH_DP)
+        val minWidth = dpToPx(MIN_WIDTH_DP)
+        val initialWidth = (screenWidth * 0.85f).toInt().coerceIn(minWidth, maxWidth)
 
         val params = WindowManager.LayoutParams(
-            width,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            initialWidth,
+            dpToPx(320) + dpToPx(80), // 初始总高度 = 内容高度 + 标题栏等
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
@@ -129,7 +151,10 @@ class FloatResultView(private val context: Context) {
             y = dpToPx(120)
         }
 
+        // 标题栏拖拽
         titleBar.setOnTouchListener(DragTouchListener(params, root))
+        // 缩放手柄拖拽
+        resizeHandle.setOnTouchListener(ResizeTouchListener(params, root, resizeHandle))
 
         container = root
         try {
@@ -138,7 +163,7 @@ class FloatResultView(private val context: Context) {
             Log.d(TAG, "Result window shown, matched=$isMatched")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to show result window", e)
-            onDismiss?.invoke()
+            dismissCallback?.invoke()
             return
         }
 
@@ -157,7 +182,8 @@ class FloatResultView(private val context: Context) {
             container = null
             isShowing = false
         }
-        onDismiss?.invoke()
+        dismissCallback?.invoke()
+        dismissCallback = null
     }
 
     fun isShowing(): Boolean = isShowing
@@ -241,6 +267,40 @@ class FloatResultView(private val context: Context) {
                     val dy = event.rawY - touchY
                     params.x = initialX + dx.toInt()
                     params.y = initialY + dy.toInt()
+                    windowManager.updateViewLayout(view, params)
+                    return true
+                }
+            }
+            return false
+        }
+    }
+
+    private inner class ResizeTouchListener(
+        private val params: WindowManager.LayoutParams,
+        private val view: View,
+        private val handle: View
+    ) : View.OnTouchListener {
+        private var startX = 0f
+        private var startY = 0f
+        private var startWidth = 0
+        private var startHeight = 0
+
+        override fun onTouch(v: View, event: MotionEvent): Boolean {
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    startX = event.rawX
+                    startY = event.rawY
+                    startWidth = params.width
+                    startHeight = params.height
+                    return true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - startX
+                    val dy = event.rawY - startY
+                    val newWidth = (startWidth + dx.toInt()).coerceIn(dpToPx(MIN_WIDTH_DP), dpToPx(MAX_WIDTH_DP))
+                    val newHeight = (startHeight + dy.toInt()).coerceIn(dpToPx(MIN_HEIGHT_DP), dpToPx(MAX_HEIGHT_DP))
+                    params.width = newWidth
+                    params.height = newHeight
                     windowManager.updateViewLayout(view, params)
                     return true
                 }
