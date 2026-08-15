@@ -253,12 +253,12 @@ class FloatWindowService : Service() {
         if (isShowingCrop) return
         isShowingCrop = true
 
-        // 重要：先移除旧的结果窗口，但避免其 onDismiss 恢复悬浮球
-        resultView?.setDismissCallback(null)   // 临时禁用回调
+        // 先移除旧的结果窗口，但避免其 onDismiss 恢复悬浮球
+        resultView?.onDismiss = null   // 禁用回调
         resultView?.dismiss()
         resultView = null
 
-        // 现在再隐藏悬浮球
+        // 再隐藏悬浮球
         floatBall?.visibility = View.GONE
 
         val params = WindowManager.LayoutParams(
@@ -317,7 +317,7 @@ class FloatWindowService : Service() {
             }
 
             // 移除旧结果窗口，同时禁用回调避免误恢复悬浮球
-            resultView?.setDismissCallback(null)
+            resultView?.onDismiss = null
             resultView?.dismiss()
             resultView = null
 
@@ -326,7 +326,7 @@ class FloatWindowService : Service() {
 
             // 创建新窗口，设置回调
             resultView = FloatResultView(this).apply {
-                setDismissCallback {
+                onDismiss = {
                     floatBall?.visibility = View.VISIBLE
                 }
             }
@@ -438,7 +438,7 @@ class FloatWindowService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         hideCropView()
-        resultView?.setDismissCallback(null)
+        resultView?.onDismiss = null
         resultView?.dismiss()
         floatBall?.let {
             try { windowManager.removeView(it) } catch (_: Exception) {}
