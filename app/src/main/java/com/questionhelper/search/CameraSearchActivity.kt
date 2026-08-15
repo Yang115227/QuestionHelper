@@ -1,6 +1,7 @@
 package com.questionhelper.search
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -38,8 +39,11 @@ import com.questionhelper.QuestionApp
 import com.questionhelper.R
 import com.questionhelper.data.QuestionRepository
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.tasks.await
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
-import kotlin.math.max
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 class CameraSearchActivity : ComponentActivity() {
 
@@ -49,14 +53,15 @@ class CameraSearchActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            cameraViewModel.startCamera()
+            cameraViewModel.onPermissionGranted()
         } else {
-            // 权限被拒绝，提示用户
+            Toast.makeText(this, "相机权限被拒绝", Toast.LENGTH_SHORT).show()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         setContent {
             CameraSearchScreen(cameraViewModel, onBack = { finish() })
         }
@@ -64,7 +69,7 @@ class CameraSearchActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
         ) {
-            cameraViewModel.startCamera()
+            cameraViewModel.onPermissionGranted()
         } else {
             requestPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
@@ -73,7 +78,6 @@ class CameraSearchActivity : ComponentActivity() {
 
 class CameraSearchViewModel : ViewModel() {
     private val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
-    private var analysisExecutor = Executors.newSingleThreadExecutor()
     private var lastAnalyzedTimestamp = 0L
     private val repository = QuestionRepository(QuestionApp.database.questionDao())
 
@@ -86,19 +90,13 @@ class CameraSearchViewModel : ViewModel() {
     )
 
     private val _result = MutableStateFlow(SearchResult())
-    val result: StateFlow<SearchResult> = _result
+    val result: StateFlow<SearchResult> = _result.asStateFlow()
 
-    fun startCamera() {
-        // 相机将在 CameraPreview 中启动
+    fun onPermissionGranted() {
+        // 相机实际启动在 Composable 中完成
     }
 
-    fun stopCamera() {
-        // 停止相机和识别
-        analysisExecutor.shutdown()
-        recognizer.close()
-    }
-
-    suspend fun processImage(imageProxy: ImageProxy) {
+    fun processImage(imageProxy: ImageProxy) {
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastAnalyzedTimestamp < 1000) {
             imageProxy.close()
@@ -106,39 +104,28 @@ class CameraSearchViewModel : ViewModel() {
         }
         lastAnalyzedTimestamp = currentTime
 
-        val mediaImage = imageProxy.image ?: run {
+        val bitmap = imageProxy.toBitmap() ?: run {
             imageProxy.close()
             return
         }
 
-        // 转换为 Bitmap
-        val bitmap = bitmapFromImageProxy(imageProxy) ?: run {
-            imageProxy.close()
-            return
-        }
-
-        try {
-            _result.update { it.copy(isRecognizing = true) }
-            val inputImage = InputImage.fromBitmap(bitmap, 0)
-            val text = withContext(Dispatchers.IO) {
-                recognizer.process(inputImage).await().text
-            }
-            if (text.isNotBlank()) {
-                // 尝试匹配题库
-                val question = repository.searchQuestionSmart(text)
-                if (question != null) {
-                    _result.update {
-                        SearchResult(
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                _result.update { it.copy(isRecognizing = true) }
+                val inputImage = InputImage.fromBitmap(bitmap, 0)
+                val text = recognizer.process(inputImage).await().text
+                if (text.isNotBlank()) {
+                    val question = repository.searchQuestionSmart(text)
+                    if (question != null) {
+                        _result.value = SearchResult(
                             question = question.content,
                             answer = question.answer,
                             analysis = question.analysis ?: "",
                             matched = true,
                             isRecognizing = false
                         )
-                    }
-                } else {
-                    _result.update {
-                        SearchResult(
+                    } else {
+                        _result.value = SearchResult(
                             question = text,
                             answer = "未匹配到题库",
                             analysis = "",
@@ -146,46 +133,44 @@ class CameraSearchViewModel : ViewModel() {
                             isRecognizing = false
                         )
                     }
+                } else {
+                    _result.update { it.copy(isRecognizing = false) }
                 }
-            } else {
-                _result.update { it.copy(isRecognizing = false) }
-            }
-        } catch (e: Exception) {
-            _result.update {
-                SearchResult(
+            } catch (e: Exception) {
+                _result.value = SearchResult(
                     question = "识别出错",
                     answer = e.message ?: "",
                     analysis = "",
                     matched = false,
                     isRecognizing = false
                 )
+            } finally {
+                bitmap.recycle()
+                imageProxy.close()
             }
-        } finally {
-            bitmap.recycle()
-            imageProxy.close()
         }
     }
 
-    private fun bitmapFromImageProxy(imageProxy: ImageProxy): android.graphics.Bitmap? {
-        val buffer = imageProxy.planes[0].buffer
+    private fun ImageProxy.toBitmap(): android.graphics.Bitmap? {
+        val buffer = planes[0].buffer
         val bytes = ByteArray(buffer.remaining())
         buffer.get(bytes)
         val yuvImage = android.graphics.YuvImage(
             bytes,
             android.graphics.ImageFormat.NV21,
-            imageProxy.width,
-            imageProxy.height,
+            width,
+            height,
             null
         )
-        val out = java.io.ByteArrayOutputStream()
-        yuvImage.compressToJpeg(android.graphics.Rect(0, 0, imageProxy.width, imageProxy.height), 80, out)
+        val out = ByteArrayOutputStream()
+        yuvImage.compressToJpeg(android.graphics.Rect(0, 0, width, height), 80, out)
         val jpegData = out.toByteArray()
         return android.graphics.BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
     }
 
     override fun onCleared() {
         super.onCleared()
-        stopCamera()
+        recognizer.close()
     }
 }
 
@@ -197,7 +182,7 @@ fun CameraSearchScreen(
 ) {
     val result by viewModel.result.collectAsState()
     val context = LocalContext.current
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     Scaffold(
         topBar = {
@@ -205,7 +190,7 @@ fun CameraSearchScreen(
                 title = { Text(stringResource(R.string.feature_camera_search)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
