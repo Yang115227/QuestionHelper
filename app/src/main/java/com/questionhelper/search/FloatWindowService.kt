@@ -161,7 +161,7 @@ class FloatWindowService : Service() {
 
     private fun showFloatBall() {
         val params = WindowManager.LayoutParams(
-            dpToPx(60), dpToPx(60),
+            dpToPx(48), dpToPx(48),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
