@@ -38,9 +38,9 @@ object ExcelParser {
                     val row = sheet.getRow(rowIndex) ?: continue
 
                     try {
-                        // 第一列：题目
-                        val content = row.getCell(0)?.readString()
-                        if (content.isNullOrEmpty()) {
+                        // 第一列：题目（题干）
+                        val stem = row.getCell(0)?.readString()
+                        if (stem.isNullOrEmpty()) {
                             Log.d(TAG, "Skip row $rowIndex: empty content")
                             continue
                         }
@@ -49,7 +49,7 @@ object ExcelParser {
                         val rawAnswer = row.getCell(1)?.readString() ?: ""
                         val answer = normalizeAnswer(rawAnswer)
                         if (answer.isEmpty()) {
-                            Log.w(TAG, "Row $rowIndex has empty answer, content=$content")
+                            Log.w(TAG, "Row $rowIndex has empty answer, content=$stem")
                         }
 
                         // 第三列及以后：选项
@@ -68,11 +68,26 @@ object ExcelParser {
                             }
                             optionsList.add(optionText)
                         }
+
+                        // 将选项拼接到题干后面，用换行分隔，便于后续提取
+                        val contentWithOptions = if (optionsList.isNotEmpty()) {
+                            buildString {
+                                append(stem)
+                                for (option in optionsList) {
+                                    append('\n')
+                                    append(option)
+                                }
+                            }
+                        } else {
+                            stem
+                        }
+
+                        // 同时保留原始选项字符串（用 | 分隔），兼容旧的 options 字段
                         val options = optionsList.joinToString("|")
 
                         questions.add(
                             Question(
-                                content = content,
+                                content = contentWithOptions,   // 关键：content 包含题干+选项
                                 options = options,
                                 answer = answer,
                                 analysis = "",
@@ -144,8 +159,8 @@ object ExcelParser {
      */
     private fun String.clean(): String {
         return this
-            .replace("\u00A0", "")  // 不间断空格
-            .replace("\u3000", "")  // 全角空格
+            .replace("\u00A0", "")
+            .replace("\u3000", "")
             .replace("\r", "")
             .replace("\n", "")
             .trim()
