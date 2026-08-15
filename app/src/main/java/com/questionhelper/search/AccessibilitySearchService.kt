@@ -233,8 +233,7 @@ class AccessibilitySearchService : AccessibilityService() {
                     val repo = QuestionRepository(QuestionApp.database.questionDao())
                     val question = repo.searchQuestionSmart(text)
 
-                    // 题目只取题干
-                    val questionText = question?.content?.lines()?.firstOrNull()?.trim() ?: text
+                    val questionText = if (question != null) extractQuestionStem(question.content) else text
 
                     val answerText = if (question != null) {
                         formatAnswerWithOptions(question.content, question.answer)
@@ -259,6 +258,21 @@ class AccessibilitySearchService : AccessibilityService() {
                 showError("文字识别失败", "错误：${e.message}")
             }
         }
+    }
+
+    /**
+     * 提取完整题干：所有非选项行，去除首尾空白，用换行连接
+     */
+    private fun extractQuestionStem(content: String): String {
+        val optionPattern = Regex("^\\s*[A-Da-d]\\s*[.、．:：）)]")
+        val stemLines = mutableListOf<String>()
+        for (line in content.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.isNotEmpty() && !optionPattern.containsMatchIn(trimmed)) {
+                stemLines.add(trimmed)
+            }
+        }
+        return if (stemLines.isEmpty()) content.trim() else stemLines.joinToString("\n")
     }
 
     /**
@@ -288,13 +302,15 @@ class AccessibilitySearchService : AccessibilityService() {
     }
 
     /**
-     * 根据题目内容与正确答案字母，生成带【正确】标记的选项文本，并附正确答案行
+     * 根据题目内容与正确答案字母，生成带【正确】标记的选项文本，并附完整正确答案行
      */
     private fun formatAnswerWithOptions(content: String, answer: String): String {
         val options = extractOptions(content)
         if (options.isEmpty()) return answer
 
         val correctLetter = answer.trim().firstOrNull()?.uppercaseChar() ?: return answer
+
+        val correctOption = options.firstOrNull { it.startsWith("$correctLetter.") || it.startsWith("$correctLetter ") }
 
         val sb = StringBuilder()
         for (opt in options) {
@@ -306,7 +322,13 @@ class AccessibilitySearchService : AccessibilityService() {
             }
             sb.append('\n')
         }
-        sb.append("✅正确答案：").append(correctLetter)
+
+        if (correctOption != null) {
+            sb.append("✅正确答案：").append(correctOption)
+        } else {
+            sb.append("✅正确答案：").append(correctLetter)
+        }
+
         return sb.toString()
     }
 
