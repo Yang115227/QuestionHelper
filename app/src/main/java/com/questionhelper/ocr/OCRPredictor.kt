@@ -19,13 +19,13 @@ class OCRPredictor(context: Context, assetPath: String) {
     private val context: Context = context.applicationContext
     private val assetPath: String = assetPath
 
-    // ==================== 调试与预处理选项 ====================
-    private val DEBUG_SKIP_DET = false // 建议关闭，除非你在测单行裁剪图
-private val USE_BGR = true         // 保持不变
-private val FILL_COLOR = android.graphics.Color.WHITE // 改为白色试试
-private val RESIZE_MODE = 1        // 改为拉伸，确保文字填满画面
-
+        // ==================== 调试与预处理选项 ====================
+    private val DEBUG_SKIP_DET = false          // 【关键】改为 false，让检测模型先切分文字
+    private val USE_BGR = true                  // 保持 true
+    private val FILL_COLOR = android.graphics.Color.WHITE // 【关键】改为 WHITE，适配白底黑字
+    private val RESIZE_MODE = 0                 // 【关键】改为 0，等比例缩放，防止文字变形
     // ========================================================
+
 
     var debugInfo: String? = null
         private set
