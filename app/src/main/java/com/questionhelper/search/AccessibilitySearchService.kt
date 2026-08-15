@@ -268,7 +268,7 @@ class AccessibilitySearchService : AccessibilityService() {
     }
 
     private fun extractQuestionStem(content: String): String {
-        val optionPattern = Regex("^\\s*[A-Da-d]\\s*[.、．:：）)]")
+        val optionPattern = Regex("^\\s*[A-Ea-d]\\s*[.、．:：）)]")
         val stemLines = mutableListOf<String>()
         for (line in content.lines()) {
             val trimmed = line.trim()
@@ -281,7 +281,7 @@ class AccessibilitySearchService : AccessibilityService() {
 
     private fun extractOptions(content: String): List<String> {
         val options = mutableListOf<String>()
-        val pattern = Regex("([A-Da-d])\\s*[.、．:：）)]\\s*(.*?)(?=\\s*[A-Da-d]\\s*[.、．:：）)]|\\n|$)", RegexOption.DOT_MATCHES_ALL)
+        val pattern = Regex("([A-Ea-d])\\s*[.、．:：）)]\\s*(.*?)(?=\\s*[A-Ea-e]\\s*[.、．:：）)]|\\n|$)", RegexOption.DOT_MATCHES_ALL)
         pattern.findAll(content).forEach { match ->
             val letter = match.groupValues[1].uppercase()
             val text = match.groupValues[2].trim()
@@ -291,7 +291,7 @@ class AccessibilitySearchService : AccessibilityService() {
         }
         if (options.isEmpty()) {
             content.lines().forEach { line ->
-                val lineMatch = Regex("^([A-Da-d])\\s*[.、．:：）)]\\s*(.+)").find(line.trim())
+                val lineMatch = Regex("^([A-Ea-e])\\s*[.、．:：）)]\\s*(.+)").find(line.trim())
                 if (lineMatch != null) {
                     val letter = lineMatch.groupValues[1].uppercase()
                     val text = lineMatch.groupValues[2].trim()
