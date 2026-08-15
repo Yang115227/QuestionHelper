@@ -5,7 +5,8 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.text.SpannableString
+import android.text.SpannableStringBuilder
+import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.util.Log
 import android.view.*
@@ -70,7 +71,7 @@ class FloatResultView(private val context: Context) {
             layoutParams = LinearLayout.LayoutParams(dpToPx(36), dpToPx(36))
             background = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(0x33FFFFFF) // 半透明白色背景
+                setColor(0x33FFFFFF)
             }
             setOnClickListener { dismiss() }
         }
@@ -196,26 +197,28 @@ class FloatResultView(private val context: Context) {
 
     fun isShowing(): Boolean = isShowing
 
-    private fun createAnswerSpannable(answer: String): SpannableString {
-        val spannable = SpannableString(answer)
-        var index = answer.indexOf("【正确】")
-        while (index >= 0) {
-            val start = index
-            val end = answer.indexOf('\n', start)
-            val lineEnd = if (end == -1) answer.length else end
-            // 删除【正确】标记
-            spannable.delete(start, start + "【正确】".length)
-            // 设置绿色
-            val adjustedEnd = lineEnd - "【正确】".length
-            spannable.setSpan(
-                ForegroundColorSpan(0xFF00C853.toInt()),
-                start,
-                adjustedEnd,
-                SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE
-            )
-            index = answer.indexOf("【正确】", lineEnd)
+    private fun createAnswerSpannable(answer: String): SpannableStringBuilder {
+        val builder = SpannableStringBuilder()
+        val lines = answer.split("\n")
+        for (line in lines) {
+            val start = builder.length
+            if (line.startsWith("【正确】")) {
+                val cleanLine = line.removePrefix("【正确】")
+                builder.append(cleanLine)
+                builder.setSpan(
+                    ForegroundColorSpan(0xFF00C853.toInt()),
+                    start,
+                    builder.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            } else {
+                builder.append(line)
+            }
+            if (line != lines.last()) {
+                builder.append("\n")
+            }
         }
-        return spannable
+        return builder
     }
 
     private fun createTransparentDivider(): View {
