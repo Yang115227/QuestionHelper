@@ -30,9 +30,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
@@ -186,7 +186,8 @@ fun CameraSearchScreen(
 ) {
     val result by viewModel.result.collectAsState()
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
+    // 获取 LifecycleOwner（Activity 本身实现了 LifecycleOwner）
+    val lifecycleOwner = remember(context) { context as? LifecycleOwner }
 
     Scaffold(
         topBar = {
@@ -229,12 +230,15 @@ fun CameraSearchScreen(
                                 }
                                 val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
                                 cameraProvider.unbindAll()
-                                cameraProvider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    cameraSelector,
-                                    preview,
-                                    imageAnalysis
-                                )
+                                // 使用 lifecycleOwner 绑定
+                                lifecycleOwner?.let { owner ->
+                                    cameraProvider.bindToLifecycle(
+                                        owner,
+                                        cameraSelector,
+                                        preview,
+                                        imageAnalysis
+                                    )
+                                }
                             }, ContextCompat.getMainExecutor(ctx))
                         }
                     }
