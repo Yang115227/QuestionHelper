@@ -5,6 +5,8 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import android.util.Log
 import android.view.*
 import android.widget.*
@@ -34,14 +36,13 @@ class FloatResultView(private val context: Context) {
             setBackgroundColor(0x00000000)
         }
 
-        // 内容卡片：半透明黑色背景，提升可读性
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
             background = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.RECTANGLE
                 cornerRadius = dpToPx(16).toFloat()
-                setColor(0xCC000000.toInt()) // 半透明黑色 (80%不透明)
+                setColor(0xCC000000.toInt()) // 半透明黑色
             }
         }
 
@@ -85,7 +86,7 @@ class FloatResultView(private val context: Context) {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dpToPx(320)
             )
-            setBackgroundColor(0x00000000) // 透明
+            setBackgroundColor(0x00000000)
         }
 
         val contentLayout = LinearLayout(context).apply {
@@ -93,14 +94,21 @@ class FloatResultView(private val context: Context) {
             setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
         }
 
+        // 题目（白色）
         contentLayout.addView(createLabel("题目", 0xFFFFFFFF.toInt()))
         contentLayout.addView(createContentText(question, 15f, 0xFFFFFFFF.toInt()))
         contentLayout.addView(createSpacer())
 
-        val answerColor = if (isMatched) 0xFF00C853.toInt() else 0xFFFFFFFF.toInt()
-        val answerLabel = if (isMatched) "答案 ✅ 已匹配题库" else "答案 ⚠️ 未匹配题库"
-        contentLayout.addView(createLabel(answerLabel, 0xFFFFFFFF.toInt()))
-        contentLayout.addView(createContentText(answer, 17f, answerColor, true))
+        // 答案部分
+        contentLayout.addView(createLabel(if (isMatched) "答案 ✅ 已匹配题库" else "答案 ⚠️ 未匹配题库", 0xFFFFFFFF.toInt()))
+        val answerTextView = createContentText("", 17f, 0xFFFFFFFF.toInt(), true)
+        if (isMatched && answer.contains("【正确】")) {
+            answerTextView.text = createAnswerSpannable(answer)
+        } else {
+            answerTextView.text = answer
+            answerTextView.setTextColor(0xFFFFFFFF.toInt())
+        }
+        contentLayout.addView(answerTextView)
         contentLayout.addView(createSpacer())
 
         if (analysis.isNotBlank()) {
@@ -120,7 +128,7 @@ class FloatResultView(private val context: Context) {
         card.addView(scrollView)
         root.addView(card)
 
-        // 右下角半透明缩放手柄
+        // 右下角缩放手柄
         val resizeHandle = TextView(context).apply {
             text = "◢"
             textSize = 24f
@@ -133,7 +141,7 @@ class FloatResultView(private val context: Context) {
             }
             background = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(0x33FFFFFF) // 半透明白色背景
+                setColor(0x33FFFFFF)
             }
         }
         root.addView(resizeHandle)
@@ -187,6 +195,28 @@ class FloatResultView(private val context: Context) {
     }
 
     fun isShowing(): Boolean = isShowing
+
+    private fun createAnswerSpannable(answer: String): SpannableString {
+        val spannable = SpannableString(answer)
+        var index = answer.indexOf("【正确】")
+        while (index >= 0) {
+            val start = index
+            val end = answer.indexOf('\n', start)
+            val lineEnd = if (end == -1) answer.length else end
+            // 删除【正确】标记
+            spannable.delete(start, start + "【正确】".length)
+            // 设置绿色
+            val adjustedEnd = lineEnd - "【正确】".length
+            spannable.setSpan(
+                ForegroundColorSpan(0xFF00C853.toInt()),
+                start,
+                adjustedEnd,
+                SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            index = answer.indexOf("【正确】", lineEnd)
+        }
+        return spannable
+    }
 
     private fun createTransparentDivider(): View {
         return View(context).apply {
