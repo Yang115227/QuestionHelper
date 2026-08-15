@@ -44,7 +44,7 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
     val context = LocalContext.current
     val repo = remember { QuestionRepository(QuestionApp.database.questionDao()) }
     val scope = rememberCoroutineScope()
-    
+
     var questions by remember { mutableStateOf<List<Question>>(emptyList()) }
     var currentIndex by remember { mutableIntStateOf(0) }
     var isLoading by remember { mutableStateOf(true) }
@@ -105,14 +105,18 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                 }
                 currentQuestion != null -> {
                     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                        // 题目
+                        // 题目（只显示题干，不包含选项）
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5)),
                             shape = MaterialTheme.shapes.medium
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
-                                Text("${currentIndex + 1}. ${currentQuestion.content}", fontSize = 16.sp, lineHeight = 24.sp)
+                                Text(
+                                    "${currentIndex + 1}. ${extractQuestionStem(currentQuestion.content)}",
+                                    fontSize = 16.sp,
+                                    lineHeight = 24.sp
+                                )
                             }
                         }
 
@@ -126,7 +130,6 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                             )
                             judgeOptions.forEach { (letter, text) ->
                                 val isSelected = selectedOptions.contains(letter)
-                                // 支持答案为 "A"/"B" 或 "正确"/"错误" 两种格式
                                 val isAnswer = showAnswer && when (currentQuestion.answer.trim()) {
                                     letter, text -> true
                                     else -> false
@@ -191,10 +194,8 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
                                     onClick = {
                                         if (!showAnswer) {
                                             selectedOptions = if (isMultiSelect) {
-                                                // 多选：切换选中状态
                                                 if (isSelected) selectedOptions - optLetter else selectedOptions + optLetter
                                             } else {
-                                                // 单选：替换
                                                 setOf(optLetter)
                                             }
                                         }
@@ -351,4 +352,20 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
             }
         }
     }
+}
+
+/**
+ * 从题目内容中提取题干（所有非选项行）。
+ * 选项行通常以字母 A/B/C/D 加标点开头，例如 "A. xxx"、"B、xxx" 等。
+ */
+private fun extractQuestionStem(content: String): String {
+    val optionPattern = Regex("^\\s*[A-Da-d]\\s*[.、．:：）)]")
+    val stemLines = mutableListOf<String>()
+    for (line in content.lines()) {
+        val trimmed = line.trim()
+        if (trimmed.isNotEmpty() && !optionPattern.containsMatchIn(trimmed)) {
+            stemLines.add(trimmed)
+        }
+    }
+    return if (stemLines.isEmpty()) content.trim() else stemLines.joinToString("\n")
 }
