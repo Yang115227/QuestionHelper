@@ -5,8 +5,73 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 class QuestionRepository(private val dao: QuestionDao) {
+    val allQuestions: Flow<List<Question>> = dao.getAllQuestions()
+    val wrongQuestions: Flow<List<Question>> = dao.getWrongQuestions()
+    val allSubjects: Flow<List<String>> = dao.getAllSubjects()
 
-    // ... 原有代码保持不变 ...
+    suspend fun searchQuestion(content: String): Question? = withContext(Dispatchers.IO) {
+        dao.searchByContent("%$content%")
+    }
+
+    suspend fun insertQuestion(question: Question) = withContext(Dispatchers.IO) {
+        dao.insertQuestion(question)
+    }
+
+    suspend fun insertQuestions(questions: List<Question>) = withContext(Dispatchers.IO) {
+        dao.insertQuestions(questions)
+    }
+
+    suspend fun markWrong(id: Long) = withContext(Dispatchers.IO) {
+        dao.markWrong(id)
+    }
+
+    suspend fun clearWrong(id: Long) = withContext(Dispatchers.IO) {
+        dao.clearWrong(id)
+    }
+
+    suspend fun deleteQuestion(question: Question) = withContext(Dispatchers.IO) {
+        dao.deleteQuestion(question)
+    }
+
+    suspend fun deleteQuestionById(id: Long) = withContext(Dispatchers.IO) {
+        dao.deleteQuestionById(id)
+    }
+
+    suspend fun getQuestionCount(): Int = withContext(Dispatchers.IO) {
+        dao.getQuestionCount()
+    }
+
+    suspend fun getWrongCount(): Int = withContext(Dispatchers.IO) {
+        dao.getWrongCount()
+    }
+
+    suspend fun getQuestionById(id: Long): Question? = withContext(Dispatchers.IO) {
+        dao.getQuestionById(id)
+    }
+
+    fun getQuestionsBySubject(subject: String): Flow<List<Question>> {
+        return dao.getQuestionsBySubject(subject)
+    }
+
+    suspend fun getOrderedQuestions(subject: String = "全部"): List<Question> = withContext(Dispatchers.IO) {
+        if (subject == "全部") dao.getAllQuestionsList() else dao.getQuestionsOrderById(subject)
+    }
+
+    suspend fun getRandomQuestions(subject: String = "全部"): List<Question> = withContext(Dispatchers.IO) {
+        if (subject == "全部") dao.getAllQuestionsRandom() else dao.getQuestionsRandom(subject)
+    }
+
+    suspend fun deleteQuestionsBySubject(subject: String) = withContext(Dispatchers.IO) {
+        dao.deleteQuestionsBySubject(subject)
+    }
+
+    suspend fun getQuestionCountBySubject(subject: String): Int = withContext(Dispatchers.IO) {
+        dao.getQuestionCountBySubject(subject)
+    }
+
+    suspend fun getLatestQuestionBySubject(subject: String): Question? = withContext(Dispatchers.IO) {
+        dao.getLatestQuestionBySubject(subject)
+    }
 
     /**
      * 智能搜索题目：先精确匹配清洗后的文本，再尝试包含匹配，最后用编辑距离模糊匹配
@@ -15,24 +80,25 @@ class QuestionRepository(private val dao: QuestionDao) {
         val cleaned = cleanForMatch(ocrText)
         if (cleaned.isBlank()) return@withContext null
 
-        // 1. 精确匹配（清洗后完全相等）
-        dao.getAllQuestionsList().find { question ->
+        val allQuestions = dao.getAllQuestionsList()
+
+        // 1. 精确匹配
+        allQuestions.find { question ->
             cleanForMatch(question.content) == cleaned
         }?.let { return@withContext it }
 
-        // 2. 包含匹配（题库题目包含 OCR 文本，或 OCR 包含题库题目，且长度足够）
-        val candidates = dao.getAllQuestionsList()
-        val minLength = 4 // 避免太短的匹配
-        candidates.find { question ->
+        // 2. 包含匹配
+        val minLength = 4
+        allQuestions.find { question ->
             val qClean = cleanForMatch(question.content)
             if (qClean.length < minLength || cleaned.length < minLength) false
             else qClean.contains(cleaned) || cleaned.contains(qClean)
         }?.let { return@withContext it }
 
-        // 3. 编辑距离相似度匹配（阈值 0.75）
+        // 3. 编辑距离相似度匹配
         var bestQuestion: Question? = null
         var bestScore = 0.0
-        for (question in candidates) {
+        for (question in allQuestions) {
             val qClean = cleanForMatch(question.content)
             val score = similarity(cleaned, qClean)
             if (score > bestScore) {
@@ -49,12 +115,11 @@ class QuestionRepository(private val dao: QuestionDao) {
     private fun cleanForMatch(input: String): String {
         return input
             .lowercase()
-            .filter { it.isLetterOrDigit() || it.code in 0x4E00..0x9FFF } // 保留中文、字母、数字
+            .filter { it.isLetterOrDigit() || it.code in 0x4E00..0x9FFF }
     }
 
     /**
      * 计算两个字符串的相似度（基于编辑距离）
-     * 返回值在 0.0 ~ 1.0 之间
      */
     private fun similarity(a: String, b: String): Double {
         if (a.isEmpty() && b.isEmpty()) return 1.0
