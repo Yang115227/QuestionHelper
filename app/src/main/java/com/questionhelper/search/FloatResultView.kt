@@ -15,10 +15,8 @@ class FloatResultView(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var container: FrameLayout? = null
     private var isShowing = false
-    private var dismissCallback: (() -> Unit)? = null
 
-    // 用于缩放的变量
-    private var scaleTouchListener: View.OnTouchListener? = null
+    var onDismiss: (() -> Unit)? = null
 
     companion object {
         private const val TAG = "FloatResultView"
@@ -29,10 +27,6 @@ class FloatResultView(private val context: Context) {
         private const val MAX_HEIGHT_DP = 600
     }
 
-    fun setDismissCallback(callback: (() -> Unit)?) {
-        dismissCallback = callback
-    }
-
     fun show(question: String, answer: String, analysis: String, isMatched: Boolean) {
         if (isShowing) dismiss()
 
@@ -40,10 +34,15 @@ class FloatResultView(private val context: Context) {
             setBackgroundColor(0x00000000)
         }
 
+        // 内容容器：完全透明，仅保留文字和按钮
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
-            background = createCardBackground()
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dpToPx(16).toFloat()
+                setColor(0x00000000) // 完全透明背景
+            }
         }
 
         val titleBar = LinearLayout(context).apply {
@@ -58,16 +57,20 @@ class FloatResultView(private val context: Context) {
         val dragHint = TextView(context).apply {
             text = "🔍 搜题结果（按住此处拖拽）"
             textSize = 14f
-            setTextColor(0xFF333333.toInt())
+            setTextColor(0xFFFFFFFF.toInt()) // 白色文字
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
         val closeBtn = TextView(context).apply {
             text = "✕"
             textSize = 20f
-            setTextColor(0xFF999999.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(dpToPx(36), dpToPx(36))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(0x00000000) // 透明背景
+            }
             setOnClickListener { dismiss() }
         }
 
@@ -75,14 +78,14 @@ class FloatResultView(private val context: Context) {
         titleBar.addView(closeBtn)
         card.addView(titleBar)
 
-        card.addView(createDivider())
+        card.addView(createTransparentDivider())
 
         val scrollView = ScrollView(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dpToPx(320) // 初始高度，之后可调整
+                dpToPx(320)
             )
-            setBackgroundColor(0x00FFFFFF)
+            setBackgroundColor(0x00000000) // 透明
         }
 
         val contentLayout = LinearLayout(context).apply {
@@ -90,25 +93,28 @@ class FloatResultView(private val context: Context) {
             setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
         }
 
-        contentLayout.addView(createLabel("题目"))
-        contentLayout.addView(createContentText(question, 15f, 0xFF333333.toInt()))
+        // 题目（白色）
+        contentLayout.addView(createLabel("题目", 0xFFFFFFFF.toInt()))
+        contentLayout.addView(createContentText(question, 15f, 0xFFFFFFFF.toInt()))
         contentLayout.addView(createSpacer())
 
-        contentLayout.addView(createLabel(if (isMatched) "答案 ✅ 已匹配题库" else "答案 ⚠️ 未匹配题库"))
-        val answerColor = if (isMatched) 0xFFE53935.toInt() else 0xFF2E7D32.toInt()
+        // 答案：匹配到题库则绿色，否则白色
+        val answerColor = if (isMatched) 0xFF00C853.toInt() else 0xFFFFFFFF.toInt()
+        val answerLabel = if (isMatched) "答案 ✅ 已匹配题库" else "答案 ⚠️ 未匹配题库"
+        contentLayout.addView(createLabel(answerLabel, 0xFFFFFFFF.toInt()))
         contentLayout.addView(createContentText(answer, 17f, answerColor, true))
         contentLayout.addView(createSpacer())
 
         if (analysis.isNotBlank()) {
-            contentLayout.addView(createLabel("解析"))
-            contentLayout.addView(createContentText(analysis, 14f, 0xFF666666.toInt()))
+            contentLayout.addView(createLabel("解析", 0xFFFFFFFF.toInt()))
+            contentLayout.addView(createContentText(analysis, 14f, 0xFFFFFFFF.toInt()))
         }
 
         if (!isMatched) {
             contentLayout.addView(createSpacer())
             contentLayout.addView(createContentText(
                 "提示：未在题库中找到完全匹配的题目，以上为 OCR 识别结果。",
-                12f, 0xFF999999.toInt()
+                12f, 0x88FFFFFF.toInt()
             ))
         }
 
@@ -116,29 +122,32 @@ class FloatResultView(private val context: Context) {
         card.addView(scrollView)
         root.addView(card)
 
-        // 右下角缩放手柄
+        // 右下角透明缩放手柄
         val resizeHandle = TextView(context).apply {
             text = "◢"
             textSize = 24f
-            setTextColor(0xFF999999.toInt())
+            setTextColor(0x88FFFFFF.toInt()) // 半透明白色
             gravity = Gravity.CENTER
             layoutParams = FrameLayout.LayoutParams(dpToPx(36), dpToPx(36)).apply {
                 gravity = Gravity.BOTTOM or Gravity.END
                 bottomMargin = dpToPx(8)
                 rightMargin = dpToPx(8)
             }
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(0x00000000) // 透明背景
+            }
         }
         root.addView(resizeHandle)
 
         val screenWidth = context.resources.displayMetrics.widthPixels
-        val screenHeight = context.resources.displayMetrics.heightPixels
         val maxWidth = dpToPx(MAX_WIDTH_DP)
         val minWidth = dpToPx(MIN_WIDTH_DP)
         val initialWidth = (screenWidth * 0.85f).toInt().coerceIn(minWidth, maxWidth)
 
         val params = WindowManager.LayoutParams(
             initialWidth,
-            dpToPx(320) + dpToPx(80), // 初始总高度 = 内容高度 + 标题栏等
+            dpToPx(320) + dpToPx(80),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
@@ -151,10 +160,8 @@ class FloatResultView(private val context: Context) {
             y = dpToPx(120)
         }
 
-        // 标题栏拖拽
         titleBar.setOnTouchListener(DragTouchListener(params, root))
-        // 缩放手柄拖拽
-        resizeHandle.setOnTouchListener(ResizeTouchListener(params, root, resizeHandle))
+        resizeHandle.setOnTouchListener(ResizeTouchListener(params, root))
 
         container = root
         try {
@@ -163,7 +170,7 @@ class FloatResultView(private val context: Context) {
             Log.d(TAG, "Result window shown, matched=$isMatched")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to show result window", e)
-            dismissCallback?.invoke()
+            onDismiss?.invoke()
             return
         }
 
@@ -174,43 +181,30 @@ class FloatResultView(private val context: Context) {
 
     fun dismiss() {
         container?.let {
-            try {
-                windowManager.removeView(it)
-            } catch (e: Exception) {
-                Log.e(TAG, "Dismiss failed", e)
-            }
+            try { windowManager.removeView(it) } catch (e: Exception) { Log.e(TAG, "Dismiss failed", e) }
             container = null
             isShowing = false
         }
-        dismissCallback?.invoke()
-        dismissCallback = null
+        onDismiss?.invoke()
     }
 
     fun isShowing(): Boolean = isShowing
 
-    private fun createCardBackground(): android.graphics.drawable.Drawable {
-        return android.graphics.drawable.GradientDrawable().apply {
-            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            cornerRadius = dpToPx(16).toFloat()
-            setColor(0xF0FFFFFF.toInt())
-        }
-    }
-
-    private fun createDivider(): View {
+    private fun createTransparentDivider(): View {
         return View(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dpToPx(1)
             ).apply { topMargin = dpToPx(8); bottomMargin = dpToPx(8) }
-            setBackgroundColor(0xFFE0E0E0.toInt())
+            setBackgroundColor(0x33FFFFFF) // 半透明白色分隔线
         }
     }
 
-    private fun createLabel(text: String): TextView {
+    private fun createLabel(text: String, color: Int): TextView {
         return TextView(context).apply {
             this.text = text
             textSize = 12f
-            setTextColor(0xFF888888.toInt())
+            setTextColor(color)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -223,9 +217,7 @@ class FloatResultView(private val context: Context) {
             this.text = text
             textSize = size
             setTextColor(color)
-            if (isBold) {
-                paint.isFakeBoldText = true
-            }
+            if (isBold) paint.isFakeBoldText = true
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -277,8 +269,7 @@ class FloatResultView(private val context: Context) {
 
     private inner class ResizeTouchListener(
         private val params: WindowManager.LayoutParams,
-        private val view: View,
-        private val handle: View
+        private val view: View
     ) : View.OnTouchListener {
         private var startX = 0f
         private var startY = 0f
