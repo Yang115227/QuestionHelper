@@ -21,6 +21,8 @@ android {
             useSupportLibrary = true
         }
 
+        // 如果只保留 arm64-v8a，可以保留；也可删除，让 Gradle 自动包含所有 ABI
+        // ML Kit 支持所有 ABI，但如果你只针对 arm64，可保留该过滤
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -87,8 +89,9 @@ android {
         compose = true
     }
 
+    // 只保留 tflite/lite 等可能被其他库用到的后缀，移除 nb/txt
     androidResources {
-        noCompress += listOf("tflite", "lite", "nb", "txt")
+        noCompress += listOf("tflite", "lite")
     }
 
     packaging {
@@ -100,31 +103,6 @@ android {
             excludes += "/META-INF/INDEX.LIST"
             excludes += "/META-INF/DEPENDENCIES"
         }
-    }
-}
-
-tasks.register("checkPaddleJar") {
-    doLast {
-        val paddleJar = file("libs/PaddlePredictor.jar")
-        if (!paddleJar.exists()) {
-            throw GradleException(
-                "❌ PaddlePredictor.jar not found at ${paddleJar.absolutePath}\n" +
-                "Please commit the file to app/libs/ in the repository."
-            )
-        }
-        if (paddleJar.length() < 1024) {
-            throw GradleException(
-                "❌ PaddlePredictor.jar is too small (${paddleJar.length()} bytes). " +
-                "The file may be corrupted."
-            )
-        }
-        println("✅ PaddlePredictor.jar verified: ${paddleJar.length()} bytes")
-    }
-}
-
-afterEvaluate {
-    tasks.named("preBuild").configure {
-        dependsOn("checkPaddleJar")
     }
 }
 
@@ -170,12 +148,11 @@ dependencies {
     }
     implementation("javax.xml.stream:stax-api:1.0-2")
 
-    val paddleJar = file("libs/PaddlePredictor.jar")
-    if (paddleJar.exists()) {
-        implementation(files(paddleJar))
-    } else {
-        println("⚠️ Warning: PaddlePredictor.jar not found, skipping local dependency")
-    }
+    // ===== ML Kit 中文识别（捆绑式离线模型）=====
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+    // 协程与 Google Task 的桥接
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+    // =============================================
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
