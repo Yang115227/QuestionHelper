@@ -18,11 +18,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -36,7 +32,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -81,7 +76,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // 监听录屏权限被撤销的事件
         ContextCompat.registerReceiver(
             this,
             object : BroadcastReceiver() {
@@ -152,7 +146,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     showCaptureChoice: Boolean = false,
@@ -188,7 +181,6 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            // 现代标题栏
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -206,7 +198,6 @@ fun MainScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 统计卡片区
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -295,12 +286,11 @@ fun MainScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(features) { feature ->
-                    ModernFeatureCard(feature = feature)
+                    FeatureCard(feature = feature)
                 }
             }
         }
 
-        // 截图方式选择对话框
         if (showCaptureDialog) {
             CaptureChoiceDialog(
                 onDismiss = { showCaptureDialog = false },
@@ -367,29 +357,15 @@ fun StatCard(
 }
 
 @Composable
-fun ModernFeatureCard(feature: FeatureItem) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f,
-        label = "feature_scale"
-    )
-
+fun FeatureCard(feature: FeatureItem) {
     Card(
+        onClick = feature.action,
         modifier = Modifier
             .fillMaxWidth()
-            .height(140.dp)
-            .scale(scale)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = LocalIndication.current,
-                onClick = feature.action
-            ),
+            .height(140.dp),
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
             modifier = Modifier
@@ -448,9 +424,7 @@ fun CaptureChoiceDialog(
                     onClick = onRequestMediaProjection,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
@@ -478,9 +452,7 @@ fun CaptureChoiceDialog(
                     onClick = onAccessibility,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
@@ -512,10 +484,6 @@ fun CaptureChoiceDialog(
     )
 }
 
-/**
- * 统一的无障碍服务检测工具函数
- * 通过 AccessibilityManager 获取已安装并启用的服务列表，进行精确匹配
- */
 fun isAccessibilityEnabled(context: Context): Boolean {
     return try {
         val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
