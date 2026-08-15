@@ -1,9 +1,9 @@
 package com.questionhelper.search
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,18 +32,22 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import com.questionhelper.QuestionApp
 import com.questionhelper.R
 import com.questionhelper.data.QuestionRepository
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
-import androidx.lifecycle.compose.LocalLifecycleOwner
 
 class CameraSearchActivity : ComponentActivity() {
 
@@ -201,7 +205,6 @@ fun CameraSearchScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // 上半部分：相机预览
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -238,7 +241,6 @@ fun CameraSearchScreen(
                 )
             }
 
-            // 下半部分：结果
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
