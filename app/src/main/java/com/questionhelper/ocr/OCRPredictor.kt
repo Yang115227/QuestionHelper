@@ -20,10 +20,11 @@ class OCRPredictor(context: Context, assetPath: String) {
     private val assetPath: String = assetPath
 
     // ==================== 调试与预处理选项 ====================
-    private val DEBUG_SKIP_DET = true          // true: 跳过检测，直接识别整张图
-    private val USE_BGR = true                 // 尝试 true/false，PaddleOCR 官方常为 BGR
-    private val FILL_COLOR = android.graphics.Color.BLACK   // 尝试 BLACK、WHITE、GRAY
-    private val RESIZE_MODE = 0                // 0: 等比例缩放+填充，1: 直接拉伸
+    private val DEBUG_SKIP_DET = false // 建议关闭，除非你在测单行裁剪图
+private val USE_BGR = true         // 保持不变
+private val FILL_COLOR = android.graphics.Color.WHITE // 改为白色试试
+private val RESIZE_MODE = 1        // 改为拉伸，确保文字填满画面
+
     // ========================================================
 
     var debugInfo: String? = null
