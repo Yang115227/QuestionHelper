@@ -74,39 +74,58 @@ class QuestionRepository(private val dao: QuestionDao) {
     }
 
     /**
-     * 智能搜索题目：先精确匹配清洗后的文本，再尝试包含匹配，最后用编辑距离模糊匹配
+     * 智能搜索题目：优化清洗与多策略相似度
      */
     suspend fun searchQuestionSmart(ocrText: String): Question? = withContext(Dispatchers.IO) {
-        val cleaned = cleanForMatch(ocrText)
-        if (cleaned.isBlank()) return@withContext null
+        val cleanedOcr = cleanForMatch(ocrText)
+        if (cleanedOcr.isBlank()) return@withContext null
 
         val allQuestions = dao.getAllQuestionsList()
+        if (allQuestions.isEmpty()) return@withContext null
 
-        // 1. 精确匹配
+        // 1. 精确匹配（清洗后完全相等）
         allQuestions.find { question ->
-            cleanForMatch(question.content) == cleaned
+            cleanForMatch(extractQuestionStem(question.content)) == cleanedOcr
         }?.let { return@withContext it }
 
-        // 2. 包含匹配
+        // 2. 包含匹配（双向）
         val minLength = 4
         allQuestions.find { question ->
-            val qClean = cleanForMatch(question.content)
-            if (qClean.length < minLength || cleaned.length < minLength) false
-            else qClean.contains(cleaned) || cleaned.contains(qClean)
+            val stem = cleanForMatch(extractQuestionStem(question.content))
+            if (stem.length < minLength || cleanedOcr.length < minLength) false
+            else stem.contains(cleanedOcr) || cleanedOcr.contains(stem)
         }?.let { return@withContext it }
 
-        // 3. 编辑距离相似度匹配
+        // 3. 相似度评分，选择最佳
         var bestQuestion: Question? = null
         var bestScore = 0.0
         for (question in allQuestions) {
-            val qClean = cleanForMatch(question.content)
-            val score = similarity(cleaned, qClean)
+            val stem = cleanForMatch(extractQuestionStem(question.content))
+            val score = maxOf(
+                levenshteinSimilarity(cleanedOcr, stem),
+                jaccardSimilarity(cleanedOcr, stem)
+            )
             if (score > bestScore) {
                 bestScore = score
                 bestQuestion = question
             }
         }
-        if (bestScore >= 0.75) bestQuestion else null
+
+        if (bestScore >= 0.6) bestQuestion else null
+    }
+
+    /**
+     * 从 content 中提取题干（第一个非选项行）
+     */
+    private fun extractQuestionStem(content: String): String {
+        val optionPattern = Regex("^\\s*[A-Da-d]\\s*[.、．:：）)]")
+        for (line in content.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.isNotEmpty() && !optionPattern.containsMatchIn(trimmed)) {
+                return trimmed
+            }
+        }
+        return content
     }
 
     /**
@@ -119,15 +138,28 @@ class QuestionRepository(private val dao: QuestionDao) {
     }
 
     /**
-     * 计算两个字符串的相似度（基于编辑距离）
+     * 基于编辑距离的相似度，返回值 0~1
      */
-    private fun similarity(a: String, b: String): Double {
+    private fun levenshteinSimilarity(a: String, b: String): Double {
         if (a.isEmpty() && b.isEmpty()) return 1.0
         if (a.isEmpty() || b.isEmpty()) return 0.0
         val maxLen = maxOf(a.length, b.length)
         if (maxLen == 0) return 1.0
         val distance = levenshteinDistance(a, b)
         return 1.0 - distance.toDouble() / maxLen
+    }
+
+    /**
+     * 基于字符集合的 Jaccard 相似度
+     */
+    private fun jaccardSimilarity(a: String, b: String): Double {
+        if (a.isEmpty() && b.isEmpty()) return 1.0
+        if (a.isEmpty() || b.isEmpty()) return 0.0
+        val setA = a.toSet()
+        val setB = b.toSet()
+        val intersection = setA.intersect(setB).size
+        val union = setA.union(setB).size
+        return if (union == 0) 0.0 else intersection.toDouble() / union
     }
 
     /**
@@ -143,9 +175,9 @@ class QuestionRepository(private val dao: QuestionDao) {
             for (j in 1..n) {
                 val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
                 dp[i][j] = minOf(
-                    dp[i - 1][j] + 1,      // 删除
-                    dp[i][j - 1] + 1,      // 插入
-                    dp[i - 1][j - 1] + cost // 替换
+                    dp[i - 1][j] + 1,
+                    dp[i][j - 1] + 1,
+                    dp[i - 1][j - 1] + cost
                 )
             }
         }
