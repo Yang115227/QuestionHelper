@@ -354,12 +354,8 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    /**
-     * 从题目内容中提取选项，返回列表，每个元素如 "A. 2"
-     */
     private fun extractOptions(content: String): List<String> {
         val options = mutableListOf<String>()
-        // 匹配选项标识：A.、A、A)、A．、A: 等，并捕获后续内容直到下一个选项或换行
         val pattern = Regex("([A-Da-d])\\s*[.、．:：）)]\\s*(.*?)(?=\\s*[A-Da-d]\\s*[.、．:：）)]|\\n|$)", RegexOption.DOT_MATCHES_ALL)
         pattern.findAll(content).forEach { match ->
             val letter = match.groupValues[1].uppercase()
@@ -368,7 +364,6 @@ class ScreenCaptureService : Service() {
                 options.add("$letter. $text")
             }
         }
-        // 如果正则没找到，尝试按行分割
         if (options.isEmpty()) {
             content.lines().forEach { line ->
                 val lineMatch = Regex("^([A-Da-d])\\s*[.、．:：）)]\\s*(.+)").find(line.trim())
@@ -382,9 +377,6 @@ class ScreenCaptureService : Service() {
         return options
     }
 
-    /**
-     * 根据题目内容与正确答案字母，生成带【正确】标记的选项文本，并附正确答案行
-     */
     private fun formatAnswerWithOptions(content: String, answer: String): String {
         val options = extractOptions(content)
         if (options.isEmpty()) return answer
@@ -401,7 +393,6 @@ class ScreenCaptureService : Service() {
             }
             sb.append('\n')
         }
-        // 添加正确答案标记行
         sb.append("✅正确答案：").append(correctLetter)
         return sb.toString()
     }
