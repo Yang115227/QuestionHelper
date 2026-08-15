@@ -21,7 +21,6 @@ class CropOverlayView @JvmOverloads constructor(
 
     private val prefs: SharedPreferences = context.getSharedPreferences("crop_prefs", Context.MODE_PRIVATE)
 
-    // 绘制
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#2196F3")
         style = Paint.Style.STROKE
@@ -31,11 +30,6 @@ class CropOverlayView @JvmOverloads constructor(
         color = Color.parseColor("#2196F3")
         style = Paint.Style.STROKE
         strokeWidth = 6f
-    }
-    // 手柄绘制（透明，仅保留一个很小的圆点作为视觉提示，可选）
-    private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.TRANSPARENT
-        style = Paint.Style.FILL
     }
 
     private var cropRect = Rect()
@@ -47,7 +41,6 @@ class CropOverlayView @JvmOverloads constructor(
     private var lastX = 0f
     private var lastY = 0f
 
-    // 透明按钮
     private lateinit var closeBtn: ImageButton
     private lateinit var resetBtn: ImageButton
     private lateinit var hideBtn: ImageButton
@@ -71,19 +64,19 @@ class CropOverlayView @JvmOverloads constructor(
     }
 
     private fun setupButtons() {
-        // 关闭按钮（右上角）透明背景
+        // 关闭按钮：半透明蓝背景 + 白色图标
         closeBtn = ImageButton(context).apply {
             setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
-            background = createTransparentCircleBackground()
+            background = createCircleButtonBackground()
             setColorFilter(Color.WHITE)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             setOnClickListener { onCropCanceled?.invoke() }
         }
 
-        // 重置按钮（左上角）透明背景
+        // 重置按钮：半透明蓝背景 + 白色图标
         resetBtn = ImageButton(context).apply {
             setImageResource(android.R.drawable.ic_menu_revert)
-            background = createTransparentCircleBackground()
+            background = createCircleButtonBackground()
             setColorFilter(Color.WHITE)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             setOnClickListener {
@@ -92,25 +85,25 @@ class CropOverlayView @JvmOverloads constructor(
             }
         }
 
-        // 隐藏按钮（左下角）透明背景
+        // 隐藏按钮：半透明蓝背景 + 白色图标
         hideBtn = ImageButton(context).apply {
             setImageResource(android.R.drawable.ic_menu_view)
-            background = createTransparentCircleBackground()
+            background = createCircleButtonBackground()
             setColorFilter(Color.WHITE)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             setOnClickListener { onCropCanceled?.invoke() }
         }
 
-        // 缩放句柄（右下角）透明背景，使用系统缩放图标
+        // 缩放手柄：半透明蓝背景 + 白色图标
         resizeHandle = ImageButton(context).apply {
             setImageResource(android.R.drawable.ic_menu_crop)
-            background = createTransparentCircleBackground()
+            background = createCircleButtonBackground()
             setColorFilter(Color.WHITE)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             setOnTouchListener(ResizeHandleTouchListener())
         }
 
-        // 确认按钮（底部居中）半透明背景
+        // 确认按钮保持半透明蓝背景
         confirmBtn = Button(context).apply {
             text = "确认搜题"
             setTextColor(Color.WHITE)
@@ -118,7 +111,7 @@ class CropOverlayView @JvmOverloads constructor(
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = confirmHeight / 2f
-                setColor(Color.parseColor("#802196F3")) // 半透明蓝色
+                setColor(Color.parseColor("#802196F3"))
             }
             setOnClickListener {
                 if (cropRect.width() >= minCropSize && cropRect.height() >= minCropSize) {
@@ -142,10 +135,10 @@ class CropOverlayView @JvmOverloads constructor(
         addView(confirmBtn)
     }
 
-    private fun createTransparentCircleBackground(): GradientDrawable {
+    private fun createCircleButtonBackground(): GradientDrawable {
         return GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(Color.TRANSPARENT) // 完全透明
+            setColor(Color.parseColor("#802196F3")) // 半透明蓝
         }
     }
 
@@ -174,7 +167,6 @@ class CropOverlayView @JvmOverloads constructor(
         }
         hideBtn.visibility = View.VISIBLE
 
-        // 缩放手柄：右下角，稍微偏移避免与边缘重合
         resizeHandle.layoutParams = FrameLayout.LayoutParams(btnSize, btnSize).apply {
             leftMargin = right - btnSize / 2
             topMargin = bottom - btnSize / 2
@@ -242,8 +234,6 @@ class CropOverlayView @JvmOverloads constructor(
         }
 
         val r = cropRect
-
-        // 只绘制边框和角标
         canvas.drawRect(r, borderPaint)
 
         val cl = dpToPx(18)
@@ -255,8 +245,6 @@ class CropOverlayView @JvmOverloads constructor(
         canvas.drawLine(r.left.toFloat(), r.bottom.toFloat(), (r.left + cl).toFloat(), r.bottom.toFloat(), cornerPaint)
         canvas.drawLine((r.right - cl).toFloat(), r.bottom.toFloat(), r.right.toFloat(), r.bottom.toFloat(), cornerPaint)
         canvas.drawLine(r.right.toFloat(), (r.bottom - cl).toFloat(), r.right.toFloat(), r.bottom.toFloat(), cornerPaint)
-
-        // 不再绘制可见缩放手柄（已用透明 ImageButton 代替）
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
