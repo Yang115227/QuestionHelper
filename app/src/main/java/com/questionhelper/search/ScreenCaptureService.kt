@@ -326,7 +326,7 @@ class ScreenCaptureService : Service() {
                     val repo = QuestionRepository(QuestionApp.database.questionDao())
                     val question = repo.searchQuestionSmart(text)
 
-                    // 提取完整题干（所有非选项行，保持换行）
+                    // 提取完整题干
                     val questionText = if (question != null) extractQuestionStem(question.content) else text
 
                     val answerText = if (question != null) {
@@ -396,7 +396,7 @@ class ScreenCaptureService : Service() {
     }
 
     /**
-     * 根据题目内容与正确答案字母，生成带【正确】标记的选项文本，并附完整正确答案行
+     * 根据题目内容与正确答案字母，生成带【正确】标记的选项文本，不包含额外正确答案行
      */
     private fun formatAnswerWithOptions(content: String, answer: String): String {
         val options = extractOptions(content)
@@ -404,26 +404,19 @@ class ScreenCaptureService : Service() {
 
         val correctLetter = answer.trim().firstOrNull()?.uppercaseChar() ?: return answer
 
-        val correctOption = options.firstOrNull { it.startsWith("$correctLetter.") || it.startsWith("$correctLetter ") }
-
         val sb = StringBuilder()
         for (opt in options) {
             val letter = opt.firstOrNull()?.uppercaseChar()
+            // 去掉选项文本中的点号/顿号，只保留字母和空格，例如 "B 奥尔卡德斯站"
+            val cleanedOpt = opt.replaceFirst(Regex("^([A-Z])\\s*[.、．]\\s*"), "$1 ")
             if (letter == correctLetter) {
-                sb.append("【正确】").append(opt)
+                sb.append("【正确】").append(cleanedOpt)
             } else {
-                sb.append(opt)
+                sb.append(cleanedOpt)
             }
             sb.append('\n')
         }
-
-        if (correctOption != null) {
-            sb.append("✅正确答案：").append(correctOption)
-        } else {
-            sb.append("✅正确答案：").append(correctLetter)
-        }
-
-        return sb.toString()
+        return sb.toString().trimEnd() // 去除最后的换行
     }
 
     private fun showError(title: String, message: String) {
