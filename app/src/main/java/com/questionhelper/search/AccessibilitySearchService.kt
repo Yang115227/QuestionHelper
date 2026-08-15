@@ -233,8 +233,15 @@ class AccessibilitySearchService : AccessibilityService() {
                     val repo = QuestionRepository(QuestionApp.database.questionDao())
                     val question = repo.searchQuestionSmart(text)
 
-                    val questionText = question?.content ?: text
-                    val answerText = question?.answer ?: "未在题库中找到匹配题目"
+                    // 题目只取题干
+                    val questionText = question?.content?.lines()?.firstOrNull()?.trim() ?: text
+
+                    val answerText = if (question != null) {
+                        formatAnswerWithOptions(question.content, question.answer)
+                    } else {
+                        "未在题库中找到匹配题目"
+                    }
+
                     val analysisText = question?.analysis ?: ""
                     val isMatched = question != null
 
@@ -252,6 +259,55 @@ class AccessibilitySearchService : AccessibilityService() {
                 showError("文字识别失败", "错误：${e.message}")
             }
         }
+    }
+
+    /**
+     * 从题目内容中提取选项，返回列表，每个元素如 "A. 2"
+     */
+    private fun extractOptions(content: String): List<String> {
+        val options = mutableListOf<String>()
+        val pattern = Regex("([A-Da-d])\\s*[.、．:：）)]\\s*(.*?)(?=\\s*[A-Da-d]\\s*[.、．:：）)]|\\n|$)", RegexOption.DOT_MATCHES_ALL)
+        pattern.findAll(content).forEach { match ->
+            val letter = match.groupValues[1].uppercase()
+            val text = match.groupValues[2].trim()
+            if (text.isNotEmpty()) {
+                options.add("$letter. $text")
+            }
+        }
+        if (options.isEmpty()) {
+            content.lines().forEach { line ->
+                val lineMatch = Regex("^([A-Da-d])\\s*[.、．:：）)]\\s*(.+)").find(line.trim())
+                if (lineMatch != null) {
+                    val letter = lineMatch.groupValues[1].uppercase()
+                    val text = lineMatch.groupValues[2].trim()
+                    options.add("$letter. $text")
+                }
+            }
+        }
+        return options
+    }
+
+    /**
+     * 根据题目内容与正确答案字母，生成带【正确】标记的选项文本，并附正确答案行
+     */
+    private fun formatAnswerWithOptions(content: String, answer: String): String {
+        val options = extractOptions(content)
+        if (options.isEmpty()) return answer
+
+        val correctLetter = answer.trim().firstOrNull()?.uppercaseChar() ?: return answer
+
+        val sb = StringBuilder()
+        for (opt in options) {
+            val letter = opt.firstOrNull()?.uppercaseChar()
+            if (letter == correctLetter) {
+                sb.append("【正确】").append(opt)
+            } else {
+                sb.append(opt)
+            }
+            sb.append('\n')
+        }
+        sb.append("✅正确答案：").append(correctLetter)
+        return sb.toString()
     }
 
     private fun showError(title: String, message: String) {
