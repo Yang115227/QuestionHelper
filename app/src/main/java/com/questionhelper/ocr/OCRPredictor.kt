@@ -81,7 +81,7 @@ class OCRPredictor(context: Context, assetPath: String) {
         return outFile
     }
 
-    private fun loadLabels() {
+        private fun loadLabels() {
         try {
             context.assets.open("$assetPath/ppocr_keys_v1.txt")
                 .bufferedReader(Charsets.UTF_8)
@@ -90,11 +90,19 @@ class OCRPredictor(context: Context, assetPath: String) {
                         wordLabels.add(line.removeSuffix("\n").removeSuffix("\r"))
                     }
                 }
+            
+            // 【在这里添加这一行】
+            // 原因：模型输出维度是6625，字典只有6623个字符。
+            // PaddleOCR标准结构需要：6623个字符 + 1个空格 = 6624个索引。
+            // 加上CTC Blank(索引0)，正好对应模型的6625输出。
+            wordLabels.add(" ") 
+
             Log.d(tag, "标签加载完成，共 ${wordLabels.size} 个")
         } catch (e: Exception) {
             Log.e(tag, "标签加载失败", e)
         }
     }
+
 
     fun runOcr(bitmap: Bitmap): List<OcrResult> {
         val rec = recPredictor ?: return emptyList()
