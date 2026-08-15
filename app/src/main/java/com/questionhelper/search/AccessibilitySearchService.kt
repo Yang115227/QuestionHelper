@@ -194,12 +194,19 @@ class AccessibilitySearchService : AccessibilityService() {
 
     private fun processScreenshotBitmap(bitmap: Bitmap, rect: Rect) {
         try {
+            val insetPx = (2 * resources.displayMetrics.density).toInt()
             val safeRect = Rect(
-                rect.left.coerceIn(0, bitmap.width),
-                rect.top.coerceIn(0, bitmap.height),
+                rect.left.coerceIn(0, bitmap.width - 1),
+                rect.top.coerceIn(0, bitmap.height - 1),
                 rect.right.coerceIn(0, bitmap.width),
                 rect.bottom.coerceIn(0, bitmap.height)
-            )
+            ).apply {
+                left = (left + insetPx).coerceAtMost(right)
+                top = (top + insetPx).coerceAtMost(bottom)
+                right = (right - insetPx).coerceAtLeast(left)
+                bottom = (bottom - insetPx).coerceAtLeast(top)
+            }
+
             if (safeRect.width() <= 0 || safeRect.height() <= 0) {
                 bitmap.recycle()
                 showError("框选区域无效", "所选区域超出屏幕范围或面积为零")
@@ -299,13 +306,17 @@ class AccessibilitySearchService : AccessibilityService() {
         val options = extractOptions(content)
         if (options.isEmpty()) return answer
 
-        val correctLetter = answer.trim().firstOrNull()?.uppercaseChar() ?: return answer
+        val correctLetters = answer
+            .uppercase()
+            .filter { it in 'A'..'Z' }
+            .toSet()
+        if (correctLetters.isEmpty()) return answer
 
         val sb = StringBuilder()
         for (opt in options) {
             val letter = opt.firstOrNull()?.uppercaseChar()
             val cleanedOpt = opt.replaceFirst(Regex("^([A-Z])\\s*[.、．]\\s*"), "$1 ")
-            if (letter == correctLetter) {
+            if (letter != null && letter in correctLetters) {
                 sb.append("【正确】").append(cleanedOpt)
             } else {
                 sb.append(cleanedOpt)
