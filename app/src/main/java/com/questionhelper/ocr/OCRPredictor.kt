@@ -80,21 +80,27 @@ class OCRPredictor(context: Context, assetPath: String) {
     }
 
     private fun loadLabels() {
-        try {
-            context.assets.open("$assetPath/ppocr_keys_v1.txt")
-                .bufferedReader(Charsets.UTF_8)
-                .useLines { lines ->
-                    lines.forEach { line ->
-                        wordLabels.add(line.removeSuffix("\n").removeSuffix("\r"))
-                    }
+    try {
+        context.assets.open("$assetPath/ppocr_keys_v1.txt")
+            .bufferedReader(Charsets.UTF_8)
+            .useLines { lines ->
+                lines.forEach { line ->
+                    wordLabels.add(line.removeSuffix("\n").removeSuffix("\r"))
                 }
-            // 如果字典行数比模型输出类别数少 1，通常是因为缺少 blank 对应的空格占位符
-            // 这里不再手动添加空格，因为模型输出索引 0 是 blank，实际字符从索引 1 开始
-            Log.d(tag, "标签加载完成，共 ${wordLabels.size} 个")
-        } catch (e: Exception) {
-            Log.e(tag, "标签加载失败", e)
-        }
+            }
+
+        // 关键：手动添加一个空格占位符，使字典大小变为 6624
+        // 理由：模型输出类别数为 6625（索引 0 是 blank，索引 1~6624 对应 6624 个字符）
+        // 字典文件本身只有 6623 个字符，需要补一个空格
+        wordLabels.add(" ")
+
+        Log.d(tag, "标签加载完成，共 ${wordLabels.size} 个")
+        // 可选：打印前几个标签用于验证
+        Log.d(tag, "前5个标签: ${wordLabels.take(5).joinToString(",")}")
+    } catch (e: Exception) {
+        Log.e(tag, "标签加载失败", e)
     }
+}
 
     fun runOcr(bitmap: Bitmap): List<OcrResult> {
         val rec = recPredictor ?: return emptyList()
