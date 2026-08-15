@@ -41,7 +41,6 @@ class AccessibilitySearchService : AccessibilityService() {
                     @Suppress("DEPRECATION")
                     intent.getParcelableExtra("rect")
                 }
-                Log.d(TAG, "Capture request: $rect")
                 rect?.let { handleCaptureRequest(it) }
             }
         }
@@ -66,7 +65,6 @@ class AccessibilitySearchService : AccessibilityService() {
         }
 
         Toast.makeText(this, R.string.accessibility_service_started, Toast.LENGTH_SHORT).show()
-        Log.d(TAG, "Accessibility service connected")
 
         if (FloatWindowService.checkPermission(this)) {
             try {
@@ -78,7 +76,6 @@ class AccessibilitySearchService : AccessibilityService() {
                 }
                 Toast.makeText(this, R.string.float_ball_showing, Toast.LENGTH_SHORT).show()
             } catch (e: Throwable) {
-                Log.e(TAG, "Start float window failed", e)
                 Toast.makeText(this, R.string.float_ball_start_failed, Toast.LENGTH_LONG).show()
             }
         } else {
@@ -92,7 +89,6 @@ class AccessibilitySearchService : AccessibilityService() {
             return
         }
         if (!isConnected) {
-            Log.w(TAG, "Service not connected yet, retry in 500ms")
             handler.postDelayed({ handleCaptureRequest(rect) }, 500)
             return
         }
@@ -123,11 +119,9 @@ class AccessibilitySearchService : AccessibilityService() {
                             if (bitmap != null) {
                                 processScreenshotBitmap(bitmap, rect)
                             } else {
-                                Log.e(TAG, "Screenshot bitmap is null")
-                                showError("截图失败", "无法从系统截图结果中提取图像，请尝试使用录屏截图方式")
+                                showError("截图失败", "无法从系统截图结果中提取图像")
                             }
                         } catch (e: Throwable) {
-                            Log.e(TAG, "Process screenshot result failed", e)
                             showError("截图处理失败", "错误：${e.message}")
                         } finally {
                             releaseScreenshotResult(result)
@@ -136,16 +130,14 @@ class AccessibilitySearchService : AccessibilityService() {
                     "onFailure" -> {
                         val errorCode = args?.getOrNull(0)
                         executor.shutdown()
-                        Log.e(TAG, "Screenshot onFailure: $errorCode")
-                        showError("系统截图失败", "错误码：$errorCode\n无障碍截图可能被系统限制，请尝试录屏截图方式")
+                        showError("系统截图失败", "错误码：$errorCode")
                     }
                 }
                 null
             }
             method.invoke(this, Display.DEFAULT_DISPLAY, executor, proxy)
         } catch (e: Throwable) {
-            Log.e(TAG, "takeScreenshot failed", e)
-            showError("无障碍截图不可用", "错误：${e.message}\n请尝试使用录屏截图方式")
+            showError("无障碍截图不可用", "错误：${e.message}")
         }
     }
 
@@ -166,21 +158,9 @@ class AccessibilitySearchService : AccessibilityService() {
         if (result is Bitmap) return result
 
         val clazz = result.javaClass
-        Log.d(TAG, "Screenshot result class: ${clazz.name}")
-
         try {
             val method = clazz.getMethod("getBitmap")
-            method.invoke(result)?.let {
-                if (it is Bitmap) return it
-            }
-        } catch (_: Throwable) {}
-
-        try {
-            val method = clazz.getDeclaredMethod("getBitmap")
-            method.isAccessible = true
-            method.invoke(result)?.let {
-                if (it is Bitmap) return it
-            }
+            method.invoke(result)?.let { if (it is Bitmap) return it }
         } catch (_: Throwable) {}
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -189,77 +169,24 @@ class AccessibilitySearchService : AccessibilityService() {
                 val hardwareBuffer = method.invoke(result)
                 if (hardwareBuffer is HardwareBuffer) {
                     val bitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, null)
-                    if (bitmap != null) {
-                        Log.d(TAG, "Bitmap extracted from HardwareBuffer")
-                        return bitmap
-                    }
+                    if (bitmap != null) return bitmap
                 }
-            } catch (e: Throwable) {
-                Log.w(TAG, "getHardwareBuffer failed", e)
-            }
+            } catch (_: Throwable) {}
         }
 
         try {
             var currentClass: Class<*>? = clazz
             while (currentClass != null && currentClass != Any::class.java) {
-                val allMethods = (currentClass.methods + currentClass.declaredMethods).distinct()
-                for (method in allMethods) {
+                for (method in (currentClass.methods + currentClass.declaredMethods).distinct()) {
                     if (method.parameterTypes.isEmpty()) {
                         method.isAccessible = true
-                        when {
-                            method.returnType == Bitmap::class.java -> {
-                                method.invoke(result)?.let {
-                                    if (it is Bitmap) return it
-                                }
-                            }
-                            method.returnType == HardwareBuffer::class.java && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
-                                method.invoke(result)?.let { hb ->
-                                    if (hb is HardwareBuffer) {
-                                        Bitmap.wrapHardwareBuffer(hb, null)?.let { return it }
-                                    }
-                                }
-                            }
+                        if (method.returnType == Bitmap::class.java) {
+                            method.invoke(result)?.let { if (it is Bitmap) return it }
                         }
                     }
                 }
                 currentClass = currentClass.superclass
             }
-        } catch (e: Throwable) {
-            Log.w(TAG, "Scan methods failed", e)
-        }
-
-        try {
-            var currentClass: Class<*>? = clazz
-            while (currentClass != null && currentClass != Any::class.java) {
-                val allFields = (currentClass.fields + currentClass.declaredFields).distinct()
-                for (field in allFields) {
-                    field.isAccessible = true
-                    when {
-                        field.type == Bitmap::class.java -> {
-                            field.get(result)?.let {
-                                if (it is Bitmap) return it
-                            }
-                        }
-                        field.type == HardwareBuffer::class.java && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
-                            field.get(result)?.let { hb ->
-                                if (hb is HardwareBuffer) {
-                                    Bitmap.wrapHardwareBuffer(hb, null)?.let { return it }
-                                }
-                            }
-                        }
-                    }
-                }
-                currentClass = currentClass.superclass
-            }
-        } catch (e: Throwable) {
-            Log.w(TAG, "Scan fields failed", e)
-        }
-
-        try {
-            val methods = clazz.declaredMethods.map { "${it.name}:${it.returnType.simpleName}" }
-            val fields = clazz.declaredFields.map { "${it.name}:${it.type.simpleName}" }
-            Log.d(TAG, "Declared methods: $methods")
-            Log.d(TAG, "Declared fields: $fields")
         } catch (_: Throwable) {}
 
         return null
@@ -279,21 +206,12 @@ class AccessibilitySearchService : AccessibilityService() {
                 return
             }
 
-            val cropped = Bitmap.createBitmap(
-                bitmap,
-                safeRect.left,
-                safeRect.top,
-                safeRect.width(),
-                safeRect.height()
-            )
+            val cropped = Bitmap.createBitmap(bitmap, safeRect.left, safeRect.top, safeRect.width(), safeRect.height())
             val safeCropped = cropped.copy(Bitmap.Config.ARGB_8888, true)
             bitmap.recycle()
             cropped.recycle()
-
-            Log.d(TAG, "Accessibility cropped: ${safeCropped.width}x${safeCropped.height}")
             processBitmap(safeCropped)
         } catch (e: Throwable) {
-            Log.e(TAG, "Crop screenshot failed", e)
             bitmap.recycle()
             showError("截图裁剪失败", "错误：${e.message}")
         }
@@ -301,32 +219,24 @@ class AccessibilitySearchService : AccessibilityService() {
 
     private fun processBitmap(bitmap: Bitmap) {
         val manager = QuestionApp.ocrManager
-
         if (!manager.isReady) {
-            val error = manager.initError ?: "未知错误"
-            Log.e(TAG, "OCR 未就绪: $error")
-            showError("OCR 未初始化", "错误：$error\n请检查模型文件是否完整")
+            showError("OCR 未初始化", manager.initError ?: "未知错误")
             bitmap.recycle()
             return
         }
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                Log.d(TAG, "OCR starting, bitmap=${bitmap.width}x${bitmap.height}")
                 val text = manager.recognizeFromBitmap(bitmap)
-                Log.d(TAG, "OCR result: '$text'")
                 bitmap.recycle()
-
                 if (text.isNotEmpty()) {
                     val repo = QuestionRepository(QuestionApp.database.questionDao())
-                    val question = repo.searchQuestion(text.take(50))
+                    val question = repo.searchQuestionSmart(text)
 
                     val questionText = question?.content ?: text
                     val answerText = question?.answer ?: "未在题库中找到匹配题目"
                     val analysisText = question?.analysis ?: ""
                     val isMatched = question != null
-
-                    Log.d(TAG, "Search result: matched=$isMatched")
 
                     sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
                         setPackage(packageName)
@@ -336,33 +246,23 @@ class AccessibilitySearchService : AccessibilityService() {
                         putExtra(FloatWindowService.EXTRA_MATCHED, isMatched)
                     })
                 } else {
-                    showError("未识别到文字", "OCR 未能识别出文字，请确保：\n1. 框选区域包含清晰的文字\n2. 文字与背景对比度足够\n3. 图片没有过度模糊")
+                    showError("未识别到文字", "请确保框选区域包含清晰的文字")
                 }
             } catch (e: Throwable) {
-                Log.e(TAG, "OCR failed", e)
                 showError("文字识别失败", "错误：${e.message}")
             }
         }
     }
 
     private fun showError(title: String, message: String) {
-        Log.e(TAG, "Error: $title - $message")
-
-        // 只发送广播，让 FloatWindowService 显示错误结果窗
-        try {
-            sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
-                setPackage(packageName)
-                putExtra(FloatWindowService.EXTRA_QUESTION, "⚠️ $title")
-                putExtra(FloatWindowService.EXTRA_ANSWER, message)
-                putExtra(FloatWindowService.EXTRA_ANALYSIS, "点击悬浮球重新尝试框选")
-                putExtra(FloatWindowService.EXTRA_MATCHED, false)
-            })
-        } catch (_: Exception) {}
-
-        // 可选：添加 Toast 作为兜底
-        handler.post {
-            Toast.makeText(this, "$title: $message", Toast.LENGTH_LONG).show()
-        }
+        sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
+            setPackage(packageName)
+            putExtra(FloatWindowService.EXTRA_QUESTION, "⚠️ $title")
+            putExtra(FloatWindowService.EXTRA_ANSWER, message)
+            putExtra(FloatWindowService.EXTRA_ANALYSIS, "点击悬浮球重新尝试框选")
+            putExtra(FloatWindowService.EXTRA_MATCHED, false)
+        })
+        handler.post { Toast.makeText(this, "$title: $message", Toast.LENGTH_LONG).show() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -373,7 +273,6 @@ class AccessibilitySearchService : AccessibilityService() {
                 @Suppress("DEPRECATION")
                 intent.getParcelableExtra("rect")
             }
-            Log.d(TAG, "CAPTURE intent received, rect=$rect, connected=$isConnected")
             rect?.let { handleCaptureRequest(it) }
         }
         return START_STICKY
