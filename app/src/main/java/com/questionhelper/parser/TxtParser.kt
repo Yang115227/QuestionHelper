@@ -56,7 +56,7 @@ object TxtParser {
                     }
                     isFirstLine = false
 
-                    val stem = parts[0].ifEmpty { continue }
+                    val stem = parts[0].ifEmpty { continue }   // 如果为空则跳过，此处 continue 在 while 循环内合法
                     val rawAnswer = parts.getOrNull(1)?.trim() ?: ""
                     val answer = normalizeAnswer(rawAnswer)
 
@@ -64,7 +64,7 @@ object TxtParser {
                     val optionsList = mutableListOf<String>()
                     if (parts.size > 2) {
                         for (i in 2 until parts.size) {
-                            val rawOption = parts[i].ifEmpty { continue }
+                            val rawOption = parts[i].ifEmpty { continue }  // continue 在 for 循环内合法
                             val optionLabel = ('A' + (i - 2)).toString()
                             val optionText = if (rawOption.matches(Regex("^[A-Z][.．、,，:：)\\s].*"))) {
                                 rawOption
