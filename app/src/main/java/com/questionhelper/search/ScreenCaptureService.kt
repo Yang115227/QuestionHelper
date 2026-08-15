@@ -104,7 +104,6 @@ class ScreenCaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) {
-            Log.w(tag, "Service restarted by system without intent, stopping self")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -119,13 +118,11 @@ class ScreenCaptureService : Service() {
                     @Suppress("DEPRECATION")
                     intent.getParcelableExtra("rect")
                 }
-                Log.d(tag, "CAPTURE action received, rect=$rect, initialized=$isInitialized")
                 if (rect != null && isInitialized) {
                     captureAndSearch(rect)
                 } else if (!isInitialized) {
                     showError("截图服务未就绪", "录屏权限可能已被系统回收，请重新点击「悬浮搜题」授权")
                 } else {
-                    Log.e(tag, "CAPTURE received but rect is null")
                     showError("框选区域无效", "请重新框选题目区域")
                 }
                 return START_STICKY
@@ -136,7 +133,6 @@ class ScreenCaptureService : Service() {
         val data = intent.getParcelableExtra<Intent>("result_data")
 
         if (resultCode != android.app.Activity.RESULT_OK || data == null) {
-            Log.e(tag, "Invalid MediaProjection data, resultCode=$resultCode")
             reportInitFailed(getString(R.string.screen_capture_invalid_data))
             stopSelf()
             return START_NOT_STICKY
@@ -148,7 +144,6 @@ class ScreenCaptureService : Service() {
 
         if (!initializeProjection(resultCode, data)) {
             val error = lastError ?: getString(R.string.screen_capture_init_failed)
-            Log.e(tag, "MediaProjection initialization failed: $error")
             reportInitFailed(error)
             stopSelf()
             return START_NOT_STICKY
@@ -187,14 +182,12 @@ class ScreenCaptureService : Service() {
             mediaProjection = manager.getMediaProjection(resultCode, data)
 
             if (mediaProjection == null) {
-                Log.e(tag, "getMediaProjection returned null")
                 lastError = getString(R.string.screen_capture_projection_null)
                 return false
             }
 
             mediaProjection?.registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() {
-                    Log.w(tag, "MediaProjection stopped by system")
                     isInitialized = false
                     isInitializing = false
                     releaseProjection()
@@ -203,24 +196,14 @@ class ScreenCaptureService : Service() {
             }, handler)
 
             imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2)
-            if (imageReader == null) {
-                lastError = getString(R.string.screen_capture_image_reader_null)
-                return false
-            }
             virtualDisplay = mediaProjection?.createVirtualDisplay(
                 "ScreenCapture",
                 screenWidth, screenHeight, screenDensity,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 imageReader?.surface, null, handler
             )
-            if (virtualDisplay == null) {
-                lastError = getString(R.string.screen_capture_virtual_display_null)
-                return false
-            }
-
-            true
+            virtualDisplay != null
         } catch (e: Exception) {
-            Log.e(tag, "Initialize projection failed", e)
             lastError = getString(R.string.screen_capture_init_exception, e.message)
             false
         }
@@ -229,11 +212,9 @@ class ScreenCaptureService : Service() {
     private fun captureAndSearch(rect: Rect) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                Log.d(tag, "captureAndSearch started, rect=$rect")
                 val bitmap = captureScreen()
                 if (bitmap == null) {
-                    Log.w(tag, "captureScreen returned null")
-                    showError("截图失败", "无法获取屏幕图像，请检查录屏权限是否仍在生效，或尝试重新授权")
+                    showError("截图失败", "无法获取屏幕图像，请检查录屏权限是否仍在生效")
                     return@launch
                 }
 
@@ -243,70 +224,43 @@ class ScreenCaptureService : Service() {
                     rect.right.coerceIn(0, bitmap.width),
                     rect.bottom.coerceIn(0, bitmap.height)
                 )
-
                 if (safeRect.width() <= 0 || safeRect.height() <= 0) {
                     bitmap.recycle()
-                    showError("框选区域无效", "所选区域超出屏幕范围或面积为零，请重新框选")
+                    showError("框选区域无效", "所选区域超出屏幕范围或面积为零")
                     return@launch
                 }
 
-                val cropped = Bitmap.createBitmap(
-                    bitmap,
-                    safeRect.left,
-                    safeRect.top,
-                    safeRect.width(),
-                    safeRect.height()
-                )
+                val cropped = Bitmap.createBitmap(bitmap, safeRect.left, safeRect.top, safeRect.width(), safeRect.height())
                 val safeCropped = cropped.copy(Bitmap.Config.ARGB_8888, true)
                 bitmap.recycle()
                 cropped.recycle()
-
-                Log.d(tag, "Cropped bitmap: ${safeCropped.width}x${safeCropped.height}")
                 processBitmap(safeCropped)
             } catch (e: Throwable) {
-                Log.e(tag, "Capture and search failed", e)
-                showError("截图处理异常", "错误：${e.message}，请重试")
+                showError("截图处理异常", "错误：${e.message}")
             }
         }
     }
 
     private fun captureScreen(): Bitmap? {
-        if (!isInitialized || imageReader == null) {
-            Log.w(tag, "Capture called but not initialized")
-            return null
-        }
+        if (!isInitialized || imageReader == null) return null
         Thread.sleep(300)
         repeat(10) { attempt ->
             var image: Image? = null
             try {
                 image = imageReader?.acquireLatestImage()
-                if (image == null) {
-                    image = imageReader?.acquireNextImage()
-                }
+                if (image == null) image = imageReader?.acquireNextImage()
                 if (image != null) {
-                    Log.d(tag, "Capture attempt $attempt: image acquired ${image.width}x${image.height}")
                     val bitmap = imageToBitmap(image)
-                    if (bitmap != null) {
-                        if (!isBlankBitmap(bitmap)) {
-                            Log.d(tag, "Capture attempt $attempt: valid bitmap obtained")
-                            return bitmap
-                        }
-                        Log.w(tag, "Capture attempt $attempt: blank bitmap, retrying...")
-                        bitmap.recycle()
-                    } else {
-                        Log.w(tag, "Capture attempt $attempt: imageToBitmap returned null")
-                    }
-                } else {
-                    Log.w(tag, "Capture attempt $attempt: null image")
+                    if (bitmap != null && !isBlankBitmap(bitmap)) return bitmap
+                    bitmap?.recycle()
                 }
             } catch (e: Exception) {
                 Log.e(tag, "Capture attempt $attempt failed", e)
             } finally {
-                try { image?.close() } catch (_: Throwable) {}
+                image?.close()
             }
             Thread.sleep(500)
         }
-        Log.e(tag, "All capture attempts failed")
         return null
     }
 
@@ -316,19 +270,12 @@ class ScreenCaptureService : Service() {
             val buffer = planes[0].buffer
             val pixelStride = planes[0].pixelStride
             val rowStride = planes[0].rowStride
-
             val width = image.width
             val height = image.height
-
-            Log.d(tag, "imageToBitmap: width=$width, height=$height, pixelStride=$pixelStride, rowStride=$rowStride")
-
             buffer.rewind()
-
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-
             val rowBuffer = ByteArray(rowStride)
             val pixels = IntArray(width * height)
-
             for (row in 0 until height) {
                 buffer.get(rowBuffer, 0, rowStride)
                 for (col in 0 until width) {
@@ -340,71 +287,50 @@ class ScreenCaptureService : Service() {
                     pixels[row * width + col] = (a shl 24) or (r shl 16) or (g shl 8) or b
                 }
             }
-
             bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
             bitmap
         } catch (e: Throwable) {
-            Log.e(tag, "Image to bitmap failed", e)
             null
         }
     }
 
     private fun isBlankBitmap(bitmap: Bitmap): Boolean {
-        return try {
-            val width = bitmap.width
-            val height = bitmap.height
-            if (width <= 0 || height <= 0) return true
-            val sampleStep = maxOf(1, minOf(width, height) / 10)
-            var hasNonBlank = false
-            outer@ for (y in 0 until height step sampleStep) {
-                for (x in 0 until width step sampleStep) {
-                    val pixel = bitmap.getPixel(x, y)
-                    val rgb = pixel and 0xFFFFFF
-                    val alpha = pixel ushr 24
-                    if (rgb > 0x101010 && alpha > 10) {
-                        hasNonBlank = true
-                        break@outer
-                    }
+        // 简单的空白检测
+        val sampleStep = maxOf(1, minOf(bitmap.width, bitmap.height) / 10)
+        var nonBlank = false
+        for (y in 0 until bitmap.height step sampleStep) {
+            for (x in 0 until bitmap.width step sampleStep) {
+                val pixel = bitmap.getPixel(x, y)
+                if ((pixel and 0xFFFFFF) > 0x101010 && (pixel ushr 24) > 10) {
+                    nonBlank = true
+                    break
                 }
             }
-            if (!hasNonBlank) {
-                Log.w(tag, "Bitmap appears blank (all dark/transparent)")
-            }
-            !hasNonBlank
-        } catch (e: Throwable) {
-            Log.e(tag, "Check blank bitmap failed", e)
-            false
+            if (nonBlank) break
         }
+        return !nonBlank
     }
 
     private fun processBitmap(bitmap: Bitmap) {
         val manager = QuestionApp.ocrManager
-
         if (!manager.isReady) {
-            val error = manager.initError ?: "未知错误"
-            Log.e(tag, "OCR 未就绪: $error")
-            showError("OCR 未初始化", "错误：$error\n请检查模型文件是否完整")
+            showError("OCR 未初始化", manager.initError ?: "未知错误")
             bitmap.recycle()
             return
         }
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                Log.d(tag, "OCR starting, bitmap=${bitmap.width}x${bitmap.height}")
                 val text = manager.recognizeFromBitmap(bitmap)
-                Log.d(tag, "OCR result: '$text'")
                 bitmap.recycle()
-
                 if (text.isNotEmpty()) {
                     val repo = QuestionRepository(QuestionApp.database.questionDao())
-                    val question = repo.searchQuestion(text.take(50))
+                    val question = repo.searchQuestionSmart(text)
 
                     val questionText = question?.content ?: text
                     val answerText = question?.answer ?: "未在题库中找到匹配题目"
                     val analysisText = question?.analysis ?: ""
                     val isMatched = question != null
-
-                    Log.d(tag, "Search result: matched=$isMatched, question=${questionText.take(20)}")
 
                     sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
                         setPackage(packageName)
@@ -414,57 +340,32 @@ class ScreenCaptureService : Service() {
                         putExtra(FloatWindowService.EXTRA_MATCHED, isMatched)
                     })
                 } else {
-                    showError("未识别到文字", "OCR 未能识别出文字，请确保：\n1. 框选区域包含清晰的文字\n2. 文字与背景对比度足够\n3. 图片没有过度模糊")
+                    showError("未识别到文字", "请确保框选区域包含清晰的文字")
                 }
             } catch (e: Throwable) {
-                Log.e(tag, "OCR failed", e)
                 showError("文字识别失败", "错误：${e.message}")
             }
         }
     }
 
     private fun showError(title: String, message: String) {
-        Log.e(tag, "Error: $title - $message")
-
-        // 只发送广播，让 FloatWindowService 显示错误结果窗
-        try {
-            sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
-                setPackage(packageName)
-                putExtra(FloatWindowService.EXTRA_QUESTION, "⚠️ $title")
-                putExtra(FloatWindowService.EXTRA_ANSWER, message)
-                putExtra(FloatWindowService.EXTRA_ANALYSIS, "点击悬浮球重新尝试框选")
-                putExtra(FloatWindowService.EXTRA_MATCHED, false)
-            })
-        } catch (_: Exception) {}
-
-        // 可选：添加 Toast 作为兜底
-        handler.post {
-            Toast.makeText(this, "$title: $message", Toast.LENGTH_LONG).show()
-        }
+        sendBroadcast(Intent(FloatWindowService.ACTION_SHOW_RESULT).apply {
+            setPackage(packageName)
+            putExtra(FloatWindowService.EXTRA_QUESTION, "⚠️ $title")
+            putExtra(FloatWindowService.EXTRA_ANSWER, message)
+            putExtra(FloatWindowService.EXTRA_ANALYSIS, "点击悬浮球重新尝试框选")
+            putExtra(FloatWindowService.EXTRA_MATCHED, false)
+        })
+        handler.post { Toast.makeText(this, "$title: $message", Toast.LENGTH_LONG).show() }
     }
 
     private fun releaseProjection() {
-        try {
-            virtualDisplay?.release()
-        } catch (e: Exception) {
-            Log.e(tag, "Release virtualDisplay failed", e)
-        }
+        virtualDisplay?.release()
         virtualDisplay = null
-
-        try {
-            imageReader?.close()
-        } catch (e: Exception) {
-            Log.e(tag, "Close imageReader failed", e)
-        }
+        imageReader?.close()
         imageReader = null
-
-        try {
-            mediaProjection?.stop()
-        } catch (e: Exception) {
-            Log.e(tag, "Stop mediaProjection failed", e)
-        }
+        mediaProjection?.stop()
         mediaProjection = null
-
         isInitialized = false
         isInitializing = false
     }
