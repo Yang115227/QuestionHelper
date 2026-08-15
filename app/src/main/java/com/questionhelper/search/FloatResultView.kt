@@ -34,14 +34,14 @@ class FloatResultView(private val context: Context) {
             setBackgroundColor(0x00000000)
         }
 
-        // 内容容器：完全透明，仅保留文字和按钮
+        // 内容卡片：半透明黑色背景，提升可读性
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
             background = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.RECTANGLE
                 cornerRadius = dpToPx(16).toFloat()
-                setColor(0x00000000) // 完全透明背景
+                setColor(0xCC000000.toInt()) // 半透明黑色 (80%不透明)
             }
         }
 
@@ -57,7 +57,7 @@ class FloatResultView(private val context: Context) {
         val dragHint = TextView(context).apply {
             text = "🔍 搜题结果（按住此处拖拽）"
             textSize = 14f
-            setTextColor(0xFFFFFFFF.toInt()) // 白色文字
+            setTextColor(0xFFFFFFFF.toInt())
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
@@ -69,7 +69,7 @@ class FloatResultView(private val context: Context) {
             layoutParams = LinearLayout.LayoutParams(dpToPx(36), dpToPx(36))
             background = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(0x00000000) // 透明背景
+                setColor(0x33FFFFFF) // 半透明白色背景
             }
             setOnClickListener { dismiss() }
         }
@@ -93,12 +93,10 @@ class FloatResultView(private val context: Context) {
             setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
         }
 
-        // 题目（白色）
         contentLayout.addView(createLabel("题目", 0xFFFFFFFF.toInt()))
         contentLayout.addView(createContentText(question, 15f, 0xFFFFFFFF.toInt()))
         contentLayout.addView(createSpacer())
 
-        // 答案：匹配到题库则绿色，否则白色
         val answerColor = if (isMatched) 0xFF00C853.toInt() else 0xFFFFFFFF.toInt()
         val answerLabel = if (isMatched) "答案 ✅ 已匹配题库" else "答案 ⚠️ 未匹配题库"
         contentLayout.addView(createLabel(answerLabel, 0xFFFFFFFF.toInt()))
@@ -122,11 +120,11 @@ class FloatResultView(private val context: Context) {
         card.addView(scrollView)
         root.addView(card)
 
-        // 右下角透明缩放手柄
+        // 右下角半透明缩放手柄
         val resizeHandle = TextView(context).apply {
             text = "◢"
             textSize = 24f
-            setTextColor(0x88FFFFFF.toInt()) // 半透明白色
+            setTextColor(0xCCFFFFFF.toInt())
             gravity = Gravity.CENTER
             layoutParams = FrameLayout.LayoutParams(dpToPx(36), dpToPx(36)).apply {
                 gravity = Gravity.BOTTOM or Gravity.END
@@ -135,7 +133,7 @@ class FloatResultView(private val context: Context) {
             }
             background = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(0x00000000) // 透明背景
+                setColor(0x33FFFFFF) // 半透明白色背景
             }
         }
         root.addView(resizeHandle)
@@ -196,7 +194,7 @@ class FloatResultView(private val context: Context) {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dpToPx(1)
             ).apply { topMargin = dpToPx(8); bottomMargin = dpToPx(8) }
-            setBackgroundColor(0x33FFFFFF) // 半透明白色分隔线
+            setBackgroundColor(0x33FFFFFF)
         }
     }
 
