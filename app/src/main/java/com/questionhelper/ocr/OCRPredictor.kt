@@ -19,10 +19,13 @@ class OCRPredictor(context: Context, assetPath: String) {
     private val context: Context = context.applicationContext
     private val assetPath: String = assetPath
 
-    // 调试开关：true 表示跳过检测，直接识别整张图；false 恢复正常流程
+    // 调试开关：true 表示跳过检测，直接识别整张图
     private val DEBUG_SKIP_DET = true
 
-    // 用于存储调试信息，OcrManager 可以读取
+    // 可调参数
+    private val REC_FILL_COLOR = android.graphics.Color.WHITE   // 填充白色
+    private val USE_BGR = false   // 默认 RGB，如果识别仍异常可改为 true 测试 BGR
+
     var debugInfo: String? = null
         private set
 
@@ -60,7 +63,6 @@ class OCRPredictor(context: Context, assetPath: String) {
         config.setPowerMode(PowerMode.LITE_POWER_HIGH)
         config.setThreads(4)
 
-        Log.d(tag, "[$name] 调用 createPaddlePredictor...")
         val predictor = PaddlePredictor.createPaddlePredictor(config)
         if (predictor == null) {
             throw RuntimeException("[$name] createPaddlePredictor 返回 null！模型文件可能损坏或与 Paddle Lite 版本不匹配")
@@ -71,14 +73,10 @@ class OCRPredictor(context: Context, assetPath: String) {
 
     private fun copyAssetToCache(assetName: String): File {
         val outFile = File(context.cacheDir, assetName.replace("/", "_"))
-        if (outFile.exists()) {
-            return outFile
-        }
+        if (outFile.exists()) return outFile
         outFile.parentFile?.mkdirs()
         context.assets.open(assetName).use { input ->
-            FileOutputStream(outFile).use { output ->
-                input.copyTo(output)
-            }
+            FileOutputStream(outFile).use { output -> input.copyTo(output) }
         }
         return outFile
     }
@@ -89,13 +87,10 @@ class OCRPredictor(context: Context, assetPath: String) {
                 .bufferedReader(Charsets.UTF_8)
                 .useLines { lines ->
                     lines.forEach { line ->
-                        // 关键：只移除行尾换行符，保留所有行（包括空格和空行），
-                        // 确保字典行数与模型输出类别数一致（通常是 6625）
                         wordLabels.add(line.removeSuffix("\n").removeSuffix("\r"))
                     }
                 }
             Log.d(tag, "标签加载完成，共 ${wordLabels.size} 个")
-            Log.d(tag, "前10个标签: ${wordLabels.take(10).joinToString(",")}")
         } catch (e: Exception) {
             Log.e(tag, "标签加载失败", e)
         }
@@ -105,21 +100,13 @@ class OCRPredictor(context: Context, assetPath: String) {
         val rec = recPredictor ?: return emptyList()
 
         if (DEBUG_SKIP_DET) {
-            // 调试模式：直接识别整张图
             val text = runRecognition(bitmap, rec)
             if (text.isNotBlank()) {
-                val box = listOf(
-                    Point(0, 0),
-                    Point(bitmap.width, 0),
-                    Point(bitmap.width, bitmap.height),
-                    Point(0, bitmap.height)
-                )
-                return listOf(OcrResult(text, box))
+                return listOf(OcrResult(text, listOf(Point(0,0), Point(bitmap.width,0), Point(bitmap.width,bitmap.height), Point(0,bitmap.height))))
             }
             return emptyList()
         }
 
-        // 正常流程：检测 + 识别
         val det = detPredictor ?: return emptyList()
         val boxes = runDetection(bitmap, det)
         if (boxes.isEmpty()) return emptyList()
@@ -128,9 +115,7 @@ class OCRPredictor(context: Context, assetPath: String) {
         for (box in boxes) {
             val crop = cropBox(bitmap, box)
             val text = runRecognition(crop, rec)
-            if (text.isNotBlank()) {
-                results.add(OcrResult(text, box))
-            }
+            if (text.isNotBlank()) results.add(OcrResult(text, box))
             crop.recycle()
         }
         return results.sortedBy { it.box.minOf { p -> p.y } }
@@ -140,7 +125,7 @@ class OCRPredictor(context: Context, assetPath: String) {
         val h = detInputShape[2]
         val w = detInputShape[3]
         val scaledBitmap = Bitmap.createScaledBitmap(bitmap, w, h, true)
-        val inputData = bitmapToFloatArray(scaledBitmap, h, w, detMean, detStd)
+        val inputData = bitmapToFloatArray(scaledBitmap, h, w, detMean, detStd, false)  // 检测模型用 RGB
         scaledBitmap.recycle()
 
         val inputTensor = predictor.getInput(0)
@@ -182,8 +167,8 @@ class OCRPredictor(context: Context, assetPath: String) {
     }
 
     private fun runRecognition(bitmap: Bitmap, predictor: PaddlePredictor): String {
-        val resizedBitmap = resizeAndPad(bitmap, recInputShape[3], recInputShape[2])
-        val inputData = bitmapToFloatArray(resizedBitmap, recInputShape[2], recInputShape[3], recMean, recStd)
+        val resizedBitmap = resizeAndPad(bitmap, recInputShape[3], recInputShape[2], REC_FILL_COLOR)
+        val inputData = bitmapToFloatArray(resizedBitmap, recInputShape[2], recInputShape[3], recMean, recStd, USE_BGR)
         resizedBitmap.recycle()
 
         val inputTensor = predictor.getInput(0)
@@ -195,11 +180,12 @@ class OCRPredictor(context: Context, assetPath: String) {
         val outputData = outputTensor.getFloatData()
         val outputShape = outputTensor.shape()
 
-        // 生成调试信息
-        val shapeStr = outputShape.joinToString("x")
+        // 调试信息：形状、前10步最大索引及对应值
         val numSteps = outputShape[1].toInt()
         val numClasses = outputShape[2].toInt()
-        val maxIndices = IntArray(minOf(10, numSteps)) { t ->
+        val topIndices = IntArray(minOf(10, numSteps))
+        val topValues = FloatArray(minOf(10, numSteps))
+        for (t in topIndices.indices) {
             var maxIdx = 0
             var maxVal = -Float.MAX_VALUE
             for (c in 0 until numClasses) {
@@ -209,16 +195,16 @@ class OCRPredictor(context: Context, assetPath: String) {
                     maxIdx = c
                 }
             }
-            maxIdx
+            topIndices[t] = maxIdx
+            topValues[t] = maxVal
         }
-        val maxIdxStr = maxIndices.joinToString(",")
-        debugInfo = "字典=${wordLabels.size}, 输出形状=$shapeStr, 前10步最大索引=[$maxIdxStr]"
+        debugInfo = "字典=${wordLabels.size}, 形状=${outputShape.joinToString("x")}, 索引=${topIndices.joinToString(",")}, 最大值=${topValues.joinToString(",")}"
         Log.d(tag, debugInfo!!)
 
         return decodeRecOutput(outputData, outputShape)
     }
 
-    private fun resizeAndPad(src: Bitmap, targetW: Int, targetH: Int): Bitmap {
+    private fun resizeAndPad(src: Bitmap, targetW: Int, targetH: Int, fillColor: Int): Bitmap {
         val srcW = src.width
         val srcH = src.height
         val scale = min(targetW.toFloat() / srcW, targetH.toFloat() / srcH)
@@ -229,7 +215,7 @@ class OCRPredictor(context: Context, assetPath: String) {
 
         val outBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(outBitmap)
-        canvas.drawColor(android.graphics.Color.BLACK)   // 黑色填充
+        canvas.drawColor(fillColor)   // 使用传入的颜色
         val left = (targetW - newW) / 2
         val top = (targetH - newH) / 2
         canvas.drawBitmap(scaled, left.toFloat(), top.toFloat(), null)
@@ -273,7 +259,8 @@ class OCRPredictor(context: Context, assetPath: String) {
 
     private fun bitmapToFloatArray(
         bitmap: Bitmap, h: Int, w: Int,
-        mean: FloatArray, std: FloatArray
+        mean: FloatArray, std: FloatArray,
+        useBgr: Boolean
     ): FloatArray {
         val pixels = IntArray(h * w)
         bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
@@ -281,9 +268,17 @@ class OCRPredictor(context: Context, assetPath: String) {
 
         for (i in pixels.indices) {
             val pixel = pixels[i]
-            val r = ((pixel shr 16) and 0xFF) / 255.0f
-            val g = ((pixel shr 8) and 0xFF) / 255.0f
-            val b = (pixel and 0xFF) / 255.0f
+            var r = ((pixel shr 16) and 0xFF) / 255.0f
+            var g = ((pixel shr 8) and 0xFF) / 255.0f
+            var b = (pixel and 0xFF) / 255.0f
+
+            if (useBgr) {
+                // 交换 R 和 B
+                val tmp = r
+                r = b
+                b = tmp
+            }
+
             floatValues[i] = (r - mean[0]) / std[0]
             floatValues[i + h * w] = (g - mean[1]) / std[1]
             floatValues[i + 2 * h * w] = (b - mean[2]) / std[2]
