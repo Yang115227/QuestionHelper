@@ -218,12 +218,20 @@ class ScreenCaptureService : Service() {
                     return@launch
                 }
 
+                // 向内收缩 2dp，避免边缘误差
+                val insetPx = (2 * resources.displayMetrics.density).toInt()
                 val safeRect = Rect(
-                    rect.left.coerceIn(0, bitmap.width),
-                    rect.top.coerceIn(0, bitmap.height),
+                    rect.left.coerceIn(0, bitmap.width - 1),
+                    rect.top.coerceIn(0, bitmap.height - 1),
                     rect.right.coerceIn(0, bitmap.width),
                     rect.bottom.coerceIn(0, bitmap.height)
-                )
+                ).apply {
+                    left = (left + insetPx).coerceAtMost(right)
+                    top = (top + insetPx).coerceAtMost(bottom)
+                    right = (right - insetPx).coerceAtLeast(left)
+                    bottom = (bottom - insetPx).coerceAtLeast(top)
+                }
+
                 if (safeRect.width() <= 0 || safeRect.height() <= 0) {
                     bitmap.recycle()
                     showError("框选区域无效", "所选区域超出屏幕范围或面积为零")
@@ -326,7 +334,6 @@ class ScreenCaptureService : Service() {
                     val repo = QuestionRepository(QuestionApp.database.questionDao())
                     val question = repo.searchQuestionSmart(text)
 
-                    // 提取完整题干
                     val questionText = if (question != null) extractQuestionStem(question.content) else text
 
                     val answerText = if (question != null) {
@@ -354,9 +361,6 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    /**
-     * 提取完整题干：所有非选项行，去除首尾空白，用换行连接
-     */
     private fun extractQuestionStem(content: String): String {
         val optionPattern = Regex("^\\s*[A-Da-d]\\s*[.、．:：）)]")
         val stemLines = mutableListOf<String>()
@@ -369,9 +373,6 @@ class ScreenCaptureService : Service() {
         return if (stemLines.isEmpty()) content.trim() else stemLines.joinToString("\n")
     }
 
-    /**
-     * 从题目内容中提取选项，返回列表，每个元素如 "A. 2"
-     */
     private fun extractOptions(content: String): List<String> {
         val options = mutableListOf<String>()
         val pattern = Regex("([A-Da-d])\\s*[.、．:：）)]\\s*(.*?)(?=\\s*[A-Da-d]\\s*[.、．:：）)]|\\n|$)", RegexOption.DOT_MATCHES_ALL)
@@ -395,28 +396,29 @@ class ScreenCaptureService : Service() {
         return options
     }
 
-    /**
-     * 根据题目内容与正确答案字母，生成带【正确】标记的选项文本，不包含额外正确答案行
-     */
     private fun formatAnswerWithOptions(content: String, answer: String): String {
         val options = extractOptions(content)
         if (options.isEmpty()) return answer
 
-        val correctLetter = answer.trim().firstOrNull()?.uppercaseChar() ?: return answer
+        // 获取所有正确字母（支持多选）
+        val correctLetters = answer
+            .uppercase()
+            .filter { it in 'A'..'Z' }
+            .toSet()
+        if (correctLetters.isEmpty()) return answer
 
         val sb = StringBuilder()
         for (opt in options) {
             val letter = opt.firstOrNull()?.uppercaseChar()
-            // 去掉选项文本中的点号/顿号，只保留字母和空格，例如 "B 奥尔卡德斯站"
             val cleanedOpt = opt.replaceFirst(Regex("^([A-Z])\\s*[.、．]\\s*"), "$1 ")
-            if (letter == correctLetter) {
+            if (letter != null && letter in correctLetters) {
                 sb.append("【正确】").append(cleanedOpt)
             } else {
                 sb.append(cleanedOpt)
             }
             sb.append('\n')
         }
-        return sb.toString().trimEnd() // 去除最后的换行
+        return sb.toString().trimEnd()
     }
 
     private fun showError(title: String, message: String) {
