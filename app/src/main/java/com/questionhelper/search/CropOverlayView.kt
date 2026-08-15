@@ -47,8 +47,10 @@ class CropOverlayView @JvmOverloads constructor(
     private lateinit var resizeHandle: TextView
     private lateinit var confirmBtn: Button
 
-    private val btnSize = dpToPx(32)
-    private val resizeBtnSize = dpToPx(34)
+    // 按钮尺寸
+    private val closeBtnSize = dpToPx(48)      // 右上角关闭按钮加大 1.5 倍
+    private val hideBtnSize = dpToPx(48)       // 左下角眼睛按钮加大 1.5 倍
+    private val resizeBtnSize = dpToPx(34)     // 右下角缩放按钮保持原样
     private val confirmWidth = dpToPx(90)
     private val confirmHeight = dpToPx(36)
 
@@ -76,7 +78,7 @@ class CropOverlayView @JvmOverloads constructor(
 
         // 左下角隐藏按钮（透明背景，红色图标，眼睛）
         hideBtn = ImageButton(context).apply {
-            setImageResource(android.R.drawable.ic_menu_view) // 眼睛图标
+            setImageResource(android.R.drawable.ic_menu_view)
             background = null
             setColorFilter(Color.RED)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
@@ -85,7 +87,7 @@ class CropOverlayView @JvmOverloads constructor(
 
         // 右下角四角缩放按钮（透明背景，红色↖↗↙↘图标）
         resizeHandle = TextView(context).apply {
-            text = "↖↗\n↙↘"   // 两行显示四个斜向箭头
+            text = "↖↗\n↙↘"
             textSize = 11f
             setTextColor(Color.RED)
             gravity = Gravity.CENTER
@@ -101,7 +103,7 @@ class CropOverlayView @JvmOverloads constructor(
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = confirmHeight / 2f
-                setColor(Color.parseColor("#80FF0000")) // 半透明红色
+                setColor(Color.parseColor("#80FF0000"))
             }
             setOnClickListener {
                 if (cropRect.width() >= minCropSize && cropRect.height() >= minCropSize) {
@@ -132,16 +134,16 @@ class CropOverlayView @JvmOverloads constructor(
         val bottom = cropRect.bottom
 
         // 关闭按钮：右上角内侧
-        closeBtn.layoutParams = FrameLayout.LayoutParams(btnSize, btnSize).apply {
-            leftMargin = right - btnSize
+        closeBtn.layoutParams = FrameLayout.LayoutParams(closeBtnSize, closeBtnSize).apply {
+            leftMargin = right - closeBtnSize
             topMargin = top
         }
         closeBtn.visibility = View.VISIBLE
 
         // 隐藏按钮：左下角内侧
-        hideBtn.layoutParams = FrameLayout.LayoutParams(btnSize, btnSize).apply {
+        hideBtn.layoutParams = FrameLayout.LayoutParams(hideBtnSize, hideBtnSize).apply {
             leftMargin = left
-            topMargin = bottom - btnSize
+            topMargin = bottom - hideBtnSize
         }
         hideBtn.visibility = View.VISIBLE
 
@@ -276,8 +278,18 @@ class CropOverlayView @JvmOverloads constructor(
     }
 
     private fun isPointInAnyButton(x: Int, y: Int): Boolean {
-        val closeRect = Rect(cropRect.right - btnSize, cropRect.top, cropRect.right, cropRect.top + btnSize)
-        val hideRect = Rect(cropRect.left, cropRect.bottom - btnSize, cropRect.left + btnSize, cropRect.bottom)
+        val closeRect = Rect(
+            cropRect.right - closeBtnSize,
+            cropRect.top,
+            cropRect.right,
+            cropRect.top + closeBtnSize
+        )
+        val hideRect = Rect(
+            cropRect.left,
+            cropRect.bottom - hideBtnSize,
+            cropRect.left + hideBtnSize,
+            cropRect.bottom
+        )
         val resizeRect = Rect(
             cropRect.right - resizeBtnSize,
             cropRect.bottom - resizeBtnSize,
