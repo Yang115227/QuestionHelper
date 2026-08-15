@@ -39,14 +39,17 @@ object TxtParser {
                     }
                     isFirstLine = false
 
-                    val stem = parts[0].ifEmpty { continue }
+                    val stem = parts[0]
+                    if (stem.isEmpty()) continue   // 修正：使用 if 判断代替 ifEmpty
+
                     val rawAnswer = parts.getOrNull(1)?.trim() ?: ""
                     val answer = normalizeAnswer(rawAnswer)
 
                     val optionsList = mutableListOf<String>()
                     if (parts.size > 2) {
                         for (i in 2 until parts.size) {
-                            val rawOption = parts[i].ifEmpty { continue }
+                            val rawOption = parts[i]
+                            if (rawOption.isEmpty()) continue   // 修正：使用 if 判断代替 ifEmpty
                             val optionLabel = ('A' + (i - 2)).toString()
                             val optionText = if (rawOption.matches(Regex("^[A-Z][.．、,，:：)\\s].*"))) {
                                 rawOption
