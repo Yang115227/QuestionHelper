@@ -19,12 +19,12 @@ class OCRPredictor(context: Context, assetPath: String) {
     private val context: Context = context.applicationContext
     private val assetPath: String = assetPath
 
-    // 调试开关：true 表示跳过检测，直接识别整张图
-    private val DEBUG_SKIP_DET = true
-
-    // 可调参数
-    private val REC_FILL_COLOR = android.graphics.Color.WHITE   // 填充白色
-    private val USE_BGR = false   // 默认 RGB，如果识别仍异常可改为 true 测试 BGR
+    // ==================== 调试与预处理选项 ====================
+    private val DEBUG_SKIP_DET = true          // true: 跳过检测，直接识别整张图
+    private val USE_BGR = true                 // 尝试 true/false，PaddleOCR 官方常为 BGR
+    private val FILL_COLOR = android.graphics.Color.BLACK   // 尝试 BLACK、WHITE、GRAY
+    private val RESIZE_MODE = 0                // 0: 等比例缩放+填充，1: 直接拉伸
+    // ========================================================
 
     var debugInfo: String? = null
         private set
@@ -32,11 +32,9 @@ class OCRPredictor(context: Context, assetPath: String) {
     private val detInputShape = intArrayOf(1, 3, 480, 480)
     private val recInputShape = intArrayOf(1, 3, 48, 320)
 
-    // 检测模型归一化参数（ImageNet 标准）
     private val detMean = floatArrayOf(0.485f, 0.456f, 0.406f)
     private val detStd = floatArrayOf(0.229f, 0.224f, 0.225f)
 
-    // 识别模型归一化参数（PaddleOCR 官方）
     private val recMean = floatArrayOf(0.5f, 0.5f, 0.5f)
     private val recStd = floatArrayOf(0.5f, 0.5f, 0.5f)
 
@@ -65,7 +63,7 @@ class OCRPredictor(context: Context, assetPath: String) {
 
         val predictor = PaddlePredictor.createPaddlePredictor(config)
         if (predictor == null) {
-            throw RuntimeException("[$name] createPaddlePredictor 返回 null！模型文件可能损坏或与 Paddle Lite 版本不匹配")
+            throw RuntimeException("[$name] createPaddlePredictor 返回 null！")
         }
         Log.d(tag, "[$name] 模型加载成功")
         return predictor
@@ -81,7 +79,7 @@ class OCRPredictor(context: Context, assetPath: String) {
         return outFile
     }
 
-        private fun loadLabels() {
+    private fun loadLabels() {
         try {
             context.assets.open("$assetPath/ppocr_keys_v1.txt")
                 .bufferedReader(Charsets.UTF_8)
@@ -90,19 +88,13 @@ class OCRPredictor(context: Context, assetPath: String) {
                         wordLabels.add(line.removeSuffix("\n").removeSuffix("\r"))
                     }
                 }
-            
-            // 【在这里添加这一行】
-            // 原因：模型输出维度是6625，字典只有6623个字符。
-            // PaddleOCR标准结构需要：6623个字符 + 1个空格 = 6624个索引。
-            // 加上CTC Blank(索引0)，正好对应模型的6625输出。
-            wordLabels.add(" ") 
-
+            // 如果字典行数比模型输出类别数少 1，通常是因为缺少 blank 对应的空格占位符
+            // 这里不再手动添加空格，因为模型输出索引 0 是 blank，实际字符从索引 1 开始
             Log.d(tag, "标签加载完成，共 ${wordLabels.size} 个")
         } catch (e: Exception) {
             Log.e(tag, "标签加载失败", e)
         }
     }
-
 
     fun runOcr(bitmap: Bitmap): List<OcrResult> {
         val rec = recPredictor ?: return emptyList()
@@ -133,7 +125,7 @@ class OCRPredictor(context: Context, assetPath: String) {
         val h = detInputShape[2]
         val w = detInputShape[3]
         val scaledBitmap = Bitmap.createScaledBitmap(bitmap, w, h, true)
-        val inputData = bitmapToFloatArray(scaledBitmap, h, w, detMean, detStd, false)  // 检测模型用 RGB
+        val inputData = bitmapToFloatArray(scaledBitmap, h, w, detMean, detStd, false)
         scaledBitmap.recycle()
 
         val inputTensor = predictor.getInput(0)
@@ -144,40 +136,37 @@ class OCRPredictor(context: Context, assetPath: String) {
         val outputTensor = predictor.getOutput(0)
         val outputShape = outputTensor.shape()
         val outputData = outputTensor.getFloatData()
-
         return postprocessDet(outputData, outputShape, bitmap.width, bitmap.height)
     }
 
-    private fun postprocessDet(
-        data: FloatArray, shape: LongArray,
-        srcWidth: Int, srcHeight: Int
-    ): List<List<Point>> {
+    private fun postprocessDet(data: FloatArray, shape: LongArray, srcWidth: Int, srcHeight: Int): List<List<Point>> {
         val h = shape[2].toInt()
         val w = shape[3].toInt()
-        val mask = Array(h) { y ->
-            BooleanArray(w) { x ->
-                data[y * w + x] > 0.3f
-            }
-        }
-
+        val mask = Array(h) { y -> BooleanArray(w) { x -> data[y * w + x] > 0.3f } }
         val boxes = findContours(mask)
         val ratioH = srcHeight.toFloat() / h
         val ratioW = srcWidth.toFloat() / w
-
         return boxes.map { contour ->
-            contour.map { p ->
-                Point(
-                    (p.x * ratioW).toInt().coerceIn(0, srcWidth - 1),
-                    (p.y * ratioH).toInt().coerceIn(0, srcHeight - 1)
-                )
-            }
+            contour.map { p -> Point((p.x * ratioW).toInt().coerceIn(0, srcWidth-1), (p.y * ratioH).toInt().coerceIn(0, srcHeight-1)) }
         }.filter { polygonArea(it) > 10 }
     }
 
     private fun runRecognition(bitmap: Bitmap, predictor: PaddlePredictor): String {
-        val resizedBitmap = resizeAndPad(bitmap, recInputShape[3], recInputShape[2], REC_FILL_COLOR)
-        val inputData = bitmapToFloatArray(resizedBitmap, recInputShape[2], recInputShape[3], recMean, recStd, USE_BGR)
+        val targetW = recInputShape[3]
+        val targetH = recInputShape[2]
+        val resizedBitmap = when (RESIZE_MODE) {
+            0 -> resizeAndPad(bitmap, targetW, targetH, FILL_COLOR)
+            else -> Bitmap.createScaledBitmap(bitmap, targetW, targetH, true)
+        }
+        val inputData = bitmapToFloatArray(resizedBitmap, targetH, targetW, recMean, recStd, USE_BGR)
         resizedBitmap.recycle()
+
+        // 输入数据统计信息（重要！）
+        val dataMin = inputData.minOrNull() ?: 0f
+        val dataMax = inputData.maxOrNull() ?: 0f
+        val dataSum = inputData.sum()
+        val dataAvg = dataSum / inputData.size
+        val sampleVals = inputData.take(10).joinToString(",") { String.format("%.2f", it) }
 
         val inputTensor = predictor.getInput(0)
         inputTensor.resize(recInputShape.map { it.toLong() }.toLongArray())
@@ -188,7 +177,7 @@ class OCRPredictor(context: Context, assetPath: String) {
         val outputData = outputTensor.getFloatData()
         val outputShape = outputTensor.shape()
 
-        // 调试信息：形状、前10步最大索引及对应值
+        // 输出调试
         val numSteps = outputShape[1].toInt()
         val numClasses = outputShape[2].toInt()
         val topIndices = IntArray(minOf(10, numSteps))
@@ -206,7 +195,12 @@ class OCRPredictor(context: Context, assetPath: String) {
             topIndices[t] = maxIdx
             topValues[t] = maxVal
         }
-        debugInfo = "字典=${wordLabels.size}, 形状=${outputShape.joinToString("x")}, 索引=${topIndices.joinToString(",")}, 最大值=${topValues.joinToString(",")}"
+
+        debugInfo = "字典=${wordLabels.size}, 形状=${outputShape.joinToString("x")}\n" +
+                    "输入 min=$dataMin, max=$dataMax, avg=$dataAvg\n" +
+                    "输入前10=${sampleVals}\n" +
+                    "输出索引=${topIndices.joinToString(",")}\n" +
+                    "输出最大值=${topValues.joinToString { String.format("%.4f", it) }}"
         Log.d(tag, debugInfo!!)
 
         return decodeRecOutput(outputData, outputShape)
@@ -218,12 +212,10 @@ class OCRPredictor(context: Context, assetPath: String) {
         val scale = min(targetW.toFloat() / srcW, targetH.toFloat() / srcH)
         val newW = (srcW * scale).toInt()
         val newH = (srcH * scale).toInt()
-
         val scaled = Bitmap.createScaledBitmap(src, newW, newH, true)
-
         val outBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(outBitmap)
-        canvas.drawColor(fillColor)   // 使用传入的颜色
+        canvas.drawColor(fillColor)
         val left = (targetW - newW) / 2
         val top = (targetH - newH) / 2
         canvas.drawBitmap(scaled, left.toFloat(), top.toFloat(), null)
@@ -236,16 +228,12 @@ class OCRPredictor(context: Context, assetPath: String) {
         val numClasses = shape[2].toInt()
         val sb = StringBuilder()
         var lastIndex = -1
-
         for (t in 0 until numSteps) {
             var maxVal = -Float.MAX_VALUE
             var maxIdx = 0
             for (c in 0 until numClasses) {
                 val v = data[t * numClasses + c]
-                if (v > maxVal) {
-                    maxVal = v
-                    maxIdx = c
-                }
+                if (v > maxVal) { maxVal = v; maxIdx = c }
             }
             if (maxIdx != 0 && maxIdx != lastIndex && maxIdx - 1 < wordLabels.size) {
                 sb.append(wordLabels[maxIdx - 1])
@@ -273,20 +261,12 @@ class OCRPredictor(context: Context, assetPath: String) {
         val pixels = IntArray(h * w)
         bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
         val floatValues = FloatArray(3 * h * w)
-
         for (i in pixels.indices) {
             val pixel = pixels[i]
             var r = ((pixel shr 16) and 0xFF) / 255.0f
             var g = ((pixel shr 8) and 0xFF) / 255.0f
             var b = (pixel and 0xFF) / 255.0f
-
-            if (useBgr) {
-                // 交换 R 和 B
-                val tmp = r
-                r = b
-                b = tmp
-            }
-
+            if (useBgr) { val tmp = r; r = b; b = tmp }
             floatValues[i] = (r - mean[0]) / std[0]
             floatValues[i + h * w] = (g - mean[1]) / std[1]
             floatValues[i + 2 * h * w] = (b - mean[2]) / std[2]
@@ -300,7 +280,6 @@ class OCRPredictor(context: Context, assetPath: String) {
         val visited = Array(h) { BooleanArray(w) }
         val boxes = mutableListOf<List<Point>>()
         val dirs = arrayOf(intArrayOf(-1, 0), intArrayOf(1, 0), intArrayOf(0, -1), intArrayOf(0, 1))
-
         for (y in 0 until h) {
             for (x in 0 until w) {
                 if (mask[y][x] && !visited[y][x]) {
@@ -308,7 +287,6 @@ class OCRPredictor(context: Context, assetPath: String) {
                     val queue = ArrayDeque<Point>()
                     queue.add(Point(x, y))
                     visited[y][x] = true
-
                     while (queue.isNotEmpty()) {
                         val p = queue.removeFirst()
                         contour.add(p)
@@ -321,10 +299,7 @@ class OCRPredictor(context: Context, assetPath: String) {
                             }
                         }
                     }
-
-                    if (contour.size >= 10) {
-                        boxes.add(minAreaRect(contour))
-                    }
+                    if (contour.size >= 10) boxes.add(minAreaRect(contour))
                 }
             }
         }
