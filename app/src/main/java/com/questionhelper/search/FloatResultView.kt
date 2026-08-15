@@ -1,6 +1,7 @@
 package com.questionhelper.search
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
@@ -19,6 +20,10 @@ class FloatResultView(private val context: Context) {
     private var container: FrameLayout? = null
     private var isShowing = false
 
+    // 用于记忆位置的 SharedPreferences
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences("float_result_prefs", Context.MODE_PRIVATE)
+
     var onDismiss: (() -> Unit)? = null
 
     companion object {
@@ -28,6 +33,8 @@ class FloatResultView(private val context: Context) {
         private const val MIN_HEIGHT_DP = 160
         private const val MAX_WIDTH_DP = 500
         private const val MAX_HEIGHT_DP = 600
+        private const val KEY_LAST_X = "last_x"
+        private const val KEY_LAST_Y = "last_y"
     }
 
     fun show(question: String, answer: String, analysis: String, isMatched: Boolean) {
@@ -37,14 +44,13 @@ class FloatResultView(private val context: Context) {
             setBackgroundColor(0x00000000)
         }
 
-        // 内容卡片：半透明黑色背景
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dpToPx(12), dpToPx(12), dpToPx(12), dpToPx(12))
             background = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.RECTANGLE
                 cornerRadius = dpToPx(12).toFloat()
-                setColor(0xCC000000.toInt())
+                setColor(0xCC000000.toInt()) // 半透明黑色
             }
         }
 
@@ -59,7 +65,7 @@ class FloatResultView(private val context: Context) {
 
         val dragHint = TextView(context).apply {
             text = "🔍 搜题结果（按住此处拖拽）"
-            textSize = 11f   // 字体缩小
+            textSize = 11f
             setTextColor(0xFFFFFFFF.toInt())
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
@@ -83,18 +89,15 @@ class FloatResultView(private val context: Context) {
 
         card.addView(createTransparentDivider())
 
-        // 直接使用 LinearLayout 作为内容容器，窗口高度自适应
         val contentLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dpToPx(2), dpToPx(2), dpToPx(2), dpToPx(2))
         }
 
-        // 题目（字体缩小）
         contentLayout.addView(createLabel("题目", 12f, 0xFFFFFFFF.toInt()))
         contentLayout.addView(createContentText(question, 13f, 0xFFFFFFFF.toInt()))
         contentLayout.addView(createSpacer(6))
 
-        // 答案部分
         contentLayout.addView(createLabel(if (isMatched) "答案 ✅ 已匹配题库" else "答案 ⚠️ 未匹配题库", 12f, 0xFFFFFFFF.toInt()))
         val answerTextView = createContentText("", 14f, 0xFFFFFFFF.toInt(), true)
         if (isMatched && answer.contains("【正确】")) {
@@ -122,7 +125,6 @@ class FloatResultView(private val context: Context) {
         card.addView(contentLayout)
         root.addView(card)
 
-        // 右下角缩放手柄（半透明）
         val resizeHandle = TextView(context).apply {
             text = "◢"
             textSize = 18f
@@ -140,15 +142,18 @@ class FloatResultView(private val context: Context) {
         }
         root.addView(resizeHandle)
 
-        // 窗口宽度为屏幕的 85%，高度自适应
         val screenWidth = context.resources.displayMetrics.widthPixels
         val maxWidth = dpToPx(MAX_WIDTH_DP)
         val minWidth = dpToPx(MIN_WIDTH_DP)
         val initialWidth = (screenWidth * 0.85f).toInt().coerceIn(minWidth, maxWidth)
 
+        // 读取上次保存的位置
+        val savedX = prefs.getInt(KEY_LAST_X, dpToPx(20))
+        val savedY = prefs.getInt(KEY_LAST_Y, dpToPx(120))
+
         val params = WindowManager.LayoutParams(
             initialWidth,
-            WindowManager.LayoutParams.WRAP_CONTENT,   // 高度自适应内容
+            WindowManager.LayoutParams.WRAP_CONTENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
@@ -157,8 +162,8 @@ class FloatResultView(private val context: Context) {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = dpToPx(20)
-            y = dpToPx(120)
+            x = savedX
+            y = savedY
         }
 
         titleBar.setOnTouchListener(DragTouchListener(params, root))
@@ -287,6 +292,14 @@ class FloatResultView(private val context: Context) {
                     windowManager.updateViewLayout(view, params)
                     return true
                 }
+                MotionEvent.ACTION_UP -> {
+                    // 保存拖拽后的位置
+                    prefs.edit()
+                        .putInt(KEY_LAST_X, params.x)
+                        .putInt(KEY_LAST_Y, params.y)
+                        .apply()
+                    return true
+                }
             }
             return false
         }
@@ -314,7 +327,6 @@ class FloatResultView(private val context: Context) {
                     val dx = event.rawX - startX
                     val dy = event.rawY - startY
                     val newWidth = (startWidth + dx.toInt()).coerceIn(dpToPx(MIN_WIDTH_DP), dpToPx(MAX_WIDTH_DP))
-                    // 高度允许缩放，但不小于最小高度
                     val newHeight = (startHeight + dy.toInt()).coerceAtLeast(dpToPx(MIN_HEIGHT_DP))
                     params.width = newWidth
                     params.height = newHeight
