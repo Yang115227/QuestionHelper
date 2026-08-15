@@ -32,41 +32,34 @@ class CropOverlayView @JvmOverloads constructor(
         style = Paint.Style.STROKE
         strokeWidth = 6f
     }
+    // 手柄绘制（透明，仅保留一个很小的圆点作为视觉提示，可选）
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#2196F3")
+        color = Color.TRANSPARENT
         style = Paint.Style.FILL
     }
-    private val handleStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        style = Paint.Style.STROKE
-        strokeWidth = 3f
-    }
 
-    // 选区框
     private var cropRect = Rect()
     private val minCropSize = dpToPx(80)
     private val handleRadius = dpToPx(18).toFloat()
 
-    // 触摸
     private enum class TouchMode { NONE, DRAG, RESIZE }
     private var touchMode = TouchMode.NONE
     private var lastX = 0f
     private var lastY = 0f
 
-    // 按钮视图
+    // 透明按钮
     private lateinit var closeBtn: ImageButton
     private lateinit var resetBtn: ImageButton
     private lateinit var hideBtn: ImageButton
+    private lateinit var resizeHandle: ImageButton
     private lateinit var confirmBtn: Button
 
-    // 按钮尺寸
     private val btnSize = dpToPx(36)
     private val confirmWidth = dpToPx(120)
     private val confirmHeight = dpToPx(44)
 
     init {
         setWillNotDraw(false)
-        // 完全透明背景，不绘制全屏遮罩
         setBackgroundColor(Color.TRANSPARENT)
         setupButtons()
         post {
@@ -78,19 +71,19 @@ class CropOverlayView @JvmOverloads constructor(
     }
 
     private fun setupButtons() {
-        // 关闭按钮（右上角）
+        // 关闭按钮（右上角）透明背景
         closeBtn = ImageButton(context).apply {
             setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
-            background = createCircleButtonBackground(Color.parseColor("#E53935"))
+            background = createTransparentCircleBackground()
             setColorFilter(Color.WHITE)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             setOnClickListener { onCropCanceled?.invoke() }
         }
 
-        // 重置按钮（左上角）
+        // 重置按钮（左上角）透明背景
         resetBtn = ImageButton(context).apply {
             setImageResource(android.R.drawable.ic_menu_revert)
-            background = createCircleButtonBackground(Color.parseColor("#757575"))
+            background = createTransparentCircleBackground()
             setColorFilter(Color.WHITE)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             setOnClickListener {
@@ -99,16 +92,25 @@ class CropOverlayView @JvmOverloads constructor(
             }
         }
 
-        // 隐藏按钮（左下角）
+        // 隐藏按钮（左下角）透明背景
         hideBtn = ImageButton(context).apply {
             setImageResource(android.R.drawable.ic_menu_view)
-            background = createCircleButtonBackground(Color.parseColor("#757575"))
+            background = createTransparentCircleBackground()
             setColorFilter(Color.WHITE)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             setOnClickListener { onCropCanceled?.invoke() }
         }
 
-        // 确认搜题按钮（底部居中）
+        // 缩放句柄（右下角）透明背景，使用系统缩放图标
+        resizeHandle = ImageButton(context).apply {
+            setImageResource(android.R.drawable.ic_menu_crop)
+            background = createTransparentCircleBackground()
+            setColorFilter(Color.WHITE)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setOnTouchListener(ResizeHandleTouchListener())
+        }
+
+        // 确认按钮（底部居中）半透明背景
         confirmBtn = Button(context).apply {
             text = "确认搜题"
             setTextColor(Color.WHITE)
@@ -116,7 +118,7 @@ class CropOverlayView @JvmOverloads constructor(
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = confirmHeight / 2f
-                setColor(Color.parseColor("#2196F3"))
+                setColor(Color.parseColor("#802196F3")) // 半透明蓝色
             }
             setOnClickListener {
                 if (cropRect.width() >= minCropSize && cropRect.height() >= minCropSize) {
@@ -125,7 +127,7 @@ class CropOverlayView @JvmOverloads constructor(
                     background = GradientDrawable().apply {
                         shape = GradientDrawable.RECTANGLE
                         cornerRadius = confirmHeight / 2f
-                        setColor(Color.parseColor("#757575"))
+                        setColor(Color.parseColor("#80757575"))
                     }
                     saveCropRect()
                     onCropConfirmed?.invoke(cropRect)
@@ -136,13 +138,14 @@ class CropOverlayView @JvmOverloads constructor(
         addView(closeBtn)
         addView(resetBtn)
         addView(hideBtn)
+        addView(resizeHandle)
         addView(confirmBtn)
     }
 
-    private fun createCircleButtonBackground(color: Int): GradientDrawable {
+    private fun createTransparentCircleBackground(): GradientDrawable {
         return GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(color)
+            setColor(Color.TRANSPARENT) // 完全透明
         }
     }
 
@@ -153,28 +156,31 @@ class CropOverlayView @JvmOverloads constructor(
         val right = cropRect.right
         val bottom = cropRect.bottom
 
-        // 关闭按钮：右上角内侧
         closeBtn.layoutParams = FrameLayout.LayoutParams(btnSize, btnSize).apply {
             leftMargin = right - btnSize
             topMargin = top
         }
         closeBtn.visibility = View.VISIBLE
 
-        // 重置按钮：左上角内侧
         resetBtn.layoutParams = FrameLayout.LayoutParams(btnSize, btnSize).apply {
             leftMargin = left
             topMargin = top
         }
         resetBtn.visibility = View.VISIBLE
 
-        // 隐藏按钮：左下角内侧
         hideBtn.layoutParams = FrameLayout.LayoutParams(btnSize, btnSize).apply {
             leftMargin = left
             topMargin = bottom - btnSize
         }
         hideBtn.visibility = View.VISIBLE
 
-        // 确认按钮：底部居中内侧
+        // 缩放手柄：右下角，稍微偏移避免与边缘重合
+        resizeHandle.layoutParams = FrameLayout.LayoutParams(btnSize, btnSize).apply {
+            leftMargin = right - btnSize / 2
+            topMargin = bottom - btnSize / 2
+        }
+        resizeHandle.visibility = View.VISIBLE
+
         val confirmLeft = (left + right) / 2 - confirmWidth / 2
         val confirmTop = bottom - confirmHeight
         confirmBtn.layoutParams = FrameLayout.LayoutParams(confirmWidth, confirmHeight).apply {
@@ -237,10 +243,9 @@ class CropOverlayView @JvmOverloads constructor(
 
         val r = cropRect
 
-        // 只绘制蓝色边框和角标，不绘制全屏遮罩
+        // 只绘制边框和角标
         canvas.drawRect(r, borderPaint)
 
-        // 四角 L 形装饰线
         val cl = dpToPx(18)
         canvas.drawLine(r.left.toFloat(), r.top.toFloat(), (r.left + cl).toFloat(), r.top.toFloat(), cornerPaint)
         canvas.drawLine(r.left.toFloat(), r.top.toFloat(), r.left.toFloat(), (r.top + cl).toFloat(), cornerPaint)
@@ -251,11 +256,7 @@ class CropOverlayView @JvmOverloads constructor(
         canvas.drawLine((r.right - cl).toFloat(), r.bottom.toFloat(), r.right.toFloat(), r.bottom.toFloat(), cornerPaint)
         canvas.drawLine(r.right.toFloat(), (r.bottom - cl).toFloat(), r.right.toFloat(), r.bottom.toFloat(), cornerPaint)
 
-        // 右下角缩放手柄
-        val hx = r.right.toFloat()
-        val hy = r.bottom.toFloat()
-        canvas.drawCircle(hx, hy, handleRadius, handlePaint)
-        canvas.drawCircle(hx, hy, handleRadius, handleStrokePaint)
+        // 不再绘制可见缩放手柄（已用透明 ImageButton 代替）
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -267,7 +268,7 @@ class CropOverlayView @JvmOverloads constructor(
                 if (isPointInButton(x, y)) {
                     return false
                 }
-                if (isInResizeHandle(x, y)) {
+                if (isInResizeHandleArea(x, y)) {
                     touchMode = TouchMode.RESIZE
                     lastX = event.x
                     lastY = event.y
@@ -321,18 +322,9 @@ class CropOverlayView @JvmOverloads constructor(
     }
 
     private fun isPointInButton(x: Int, y: Int): Boolean {
-        val closeRect = Rect(
-            cropRect.right - btnSize, cropRect.top,
-            cropRect.right, cropRect.top + btnSize
-        )
-        val resetRect = Rect(
-            cropRect.left, cropRect.top,
-            cropRect.left + btnSize, cropRect.top + btnSize
-        )
-        val hideRect = Rect(
-            cropRect.left, cropRect.bottom - btnSize,
-            cropRect.left + btnSize, cropRect.bottom
-        )
+        val closeRect = Rect(cropRect.right - btnSize, cropRect.top, cropRect.right, cropRect.top + btnSize)
+        val resetRect = Rect(cropRect.left, cropRect.top, cropRect.left + btnSize, cropRect.top + btnSize)
+        val hideRect = Rect(cropRect.left, cropRect.bottom - btnSize, cropRect.left + btnSize, cropRect.bottom)
         val confirmRect = Rect(
             (cropRect.left + cropRect.right) / 2 - confirmWidth / 2,
             cropRect.bottom - confirmHeight,
@@ -343,11 +335,43 @@ class CropOverlayView @JvmOverloads constructor(
                 hideRect.contains(x, y) || confirmRect.contains(x, y)
     }
 
-    private fun isInResizeHandle(x: Int, y: Int): Boolean {
+    private fun isInResizeHandleArea(x: Int, y: Int): Boolean {
         val dx = x - cropRect.right
         val dy = y - cropRect.bottom
         val threshold = (handleRadius + dpToPx(12)).toInt()
         return dx * dx + dy * dy <= threshold * threshold
+    }
+
+    private inner class ResizeHandleTouchListener : View.OnTouchListener {
+        private var startX = 0f
+        private var startY = 0f
+        private var startRight = 0
+        private var startBottom = 0
+
+        override fun onTouch(v: View, event: MotionEvent): Boolean {
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    startX = event.rawX
+                    startY = event.rawY
+                    startRight = cropRect.right
+                    startBottom = cropRect.bottom
+                    return true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - startX
+                    val dy = event.rawY - startY
+                    cropRect.right = (startRight + dx.toInt()).coerceIn(cropRect.left + minCropSize, width)
+                    cropRect.bottom = (startBottom + dy.toInt()).coerceIn(cropRect.top + minCropSize, height)
+                    updateButtonPositions()
+                    invalidate()
+                    return true
+                }
+                MotionEvent.ACTION_UP -> {
+                    return true
+                }
+            }
+            return false
+        }
     }
 
     private fun dpToPx(dp: Int): Int {
