@@ -26,7 +26,6 @@ object ExcelParser {
                     continue
                 }
 
-                // 尝试从第一行开始读取；如果第一行看起来像标题（题目/答案），则跳过
                 val firstRow = sheet.getRow(0)
                 val firstCellText = firstRow?.getCell(0)?.toString()?.trim() ?: ""
                 val skipHeader = firstCellText.isHeader()
@@ -52,19 +51,25 @@ object ExcelParser {
                             Log.w(TAG, "Row $rowIndex has empty answer, content=$stem")
                         }
 
-                        // 第三列及以后：选项
+                        // 第三列及以后：选项（需跳过难度列）
                         val optionsList = mutableListOf<String>()
                         val lastCell = row.lastCellNum.coerceAtLeast(0).toInt()
+                        var optionIndex = 0
                         for (colIndex in 2 until lastCell) {
-                            val rawOption = row.getCell(colIndex)?.readString()
-                            if (rawOption.isNullOrEmpty()) continue
+                            val rawValue = row.getCell(colIndex)?.readString()
+                            if (rawValue.isNullOrEmpty()) continue
 
-                            val optionLabel = ('A' + (colIndex - 2)).toString()
-                            // 如果单元格已经包含 A./A、/A) 等前缀，则不再重复添加
+                            // 判断是否为难度等级，如果是则跳过，不作为选项
+                            if (rawValue in setOf("初级", "中级", "高级", "技师")) {
+                                Log.d(TAG, "Skip difficulty column: $rawValue at col $colIndex")
+                                continue
+                            }
+
+                            val optionLabel = ('A' + optionIndex).toString()
+                            optionIndex++
                             val optionText = when {
-                                rawOption.matches(Regex("^[A-Z][.．、,，:：)\\s].*")) -> rawOption
-                                rawOption == "正确" || rawOption == "错误" -> "$optionLabel. $rawOption"
-                                else -> "$optionLabel. $rawOption"
+                                rawValue.matches(Regex("^[A-Z][.．、,，:：)\\s].*")) -> rawValue
+                                else -> "$optionLabel. $rawValue"
                             }
                             optionsList.add(optionText)
                         }
@@ -82,12 +87,11 @@ object ExcelParser {
                             stem
                         }
 
-                        // 同时保留原始选项字符串（用 | 分隔），兼容旧的 options 字段
                         val options = optionsList.joinToString("|")
 
                         questions.add(
                             Question(
-                                content = contentWithOptions,   // 关键：content 包含题干+选项
+                                content = contentWithOptions,
                                 options = options,
                                 answer = answer,
                                 analysis = "",
@@ -127,10 +131,6 @@ object ExcelParser {
         return questions
     }
 
-    /**
-     * 将单元格内容统一读取为字符串，并清理常见杂质。
-     * Numeric 类型会去掉末尾的 .0。
-     */
     private fun Cell.readString(): String {
         return when (cellType) {
             CellType.NUMERIC -> {
@@ -154,9 +154,6 @@ object ExcelParser {
         }.trim().clean()
     }
 
-    /**
-     * 清理文本：去除首尾空白、换行、全角空格，以及部分不可见字符。
-     */
     private fun String.clean(): String {
         return this
             .replace("\u00A0", "")
@@ -166,32 +163,22 @@ object ExcelParser {
             .trim()
     }
 
-    /**
-     * 判断第一行是否是标题行。
-     */
     private fun String.isHeader(): Boolean {
         val lower = this.lowercase()
         return lower.contains("题目") || lower.contains("题干") ||
                lower.contains("答案") || lower.contains("选项") ||
+               lower.contains("难度") ||
                lower.contains("question") || lower.contains("answer")
     }
 
-    /**
-     * 规范化答案格式：
-     * - "A,B,C" / "A、B、C" / "A B C" / "A,B,C," -> "ABC"
-     * - "正确" / "错误" / "对" / "错" / "T" / "F" / "√" / "×" -> 统一为 "正确" / "错误"
-     * - 其它情况去除空格后返回
-     */
     private fun normalizeAnswer(answer: String): String {
         if (answer.isEmpty()) return ""
 
-        // 判断题答案统一转换为 "正确" / "错误"
         when (answer) {
             "正确", "对", "T", "TRUE", "True", "true", "√", "是" -> return "正确"
             "错误", "错", "F", "FALSE", "False", "false", "×", "X", "否" -> return "错误"
         }
 
-        // 提取所有 A-Z 字母，去重并保持顺序（多选题/单选题）
         val letters = answer
             .uppercase()
             .filter { it in 'A'..'Z' }
