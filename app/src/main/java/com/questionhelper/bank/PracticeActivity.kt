@@ -356,10 +356,11 @@ fun PracticeScreen(mode: String, subject: String, initialQuestionId: Long) {
 
 /**
  * 从题目内容中提取题干（所有非选项行）。
- * 选项行通常以字母 A/B/C/D 加标点开头，例如 "A. xxx"、"B、xxx" 等。
+ * 选项行通常以字母 A-Z（含大小写）加标点开头，例如 "A. xxx"、"B、xxx"、"E) xxx" 等。
  */
 private fun extractQuestionStem(content: String): String {
-    val optionPattern = Regex("^\\s*[A-Da-d]\\s*[.、．:：）)]")
+    // 修改：支持任意大写或小写字母选项，避免 E、F 等选项被误判为题干
+    val optionPattern = Regex("^\\s*[A-Za-z]\\s*[.、．:：）)]")
     val stemLines = mutableListOf<String>()
     for (line in content.lines()) {
         val trimmed = line.trim()
