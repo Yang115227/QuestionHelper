@@ -161,7 +161,7 @@ class FloatWindowService : Service() {
 
     private fun showFloatBall() {
         val params = WindowManager.LayoutParams(
-            dpToPx(48), dpToPx(48),
+            dpToPx(40), dpToPx(40),  // 悬浮球尺寸可调
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
@@ -237,6 +237,12 @@ class FloatWindowService : Service() {
         showCropView()
     }
 
+    // 长按关闭悬浮球
+    private fun onFloatBallLongClick() {
+        Toast.makeText(this, "悬浮球已关闭", Toast.LENGTH_SHORT).show()
+        stopSelf()   // 停止服务，onDestroy 中会移除悬浮球
+    }
+
     private fun isAccessibilityServiceEnabled(): Boolean {
         return try {
             val enabledServices = Settings.Secure.getString(
@@ -253,6 +259,7 @@ class FloatWindowService : Service() {
         if (isShowingCrop) return
         isShowingCrop = true
 
+        // 先移除旧的结果窗口，避免回调恢复悬浮球
         resultView?.onDismiss = null
         resultView?.dismiss()
         resultView = null
@@ -397,6 +404,11 @@ class FloatWindowService : Service() {
         private var touchY = 0f
         private var isClick = false
         private val clickThreshold = 15f
+        private var longPressTriggered = false
+        private val longPressRunnable = Runnable {
+            longPressTriggered = true
+            onFloatBallLongClick()
+        }
 
         override fun onTouch(v: View, event: MotionEvent): Boolean {
             when (event.action) {
@@ -406,13 +418,17 @@ class FloatWindowService : Service() {
                     touchX = event.rawX
                     touchY = event.rawY
                     isClick = true
+                    longPressTriggered = false
+                    handler.postDelayed(longPressRunnable, 500)  // 长按 500ms 触发
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    if (longPressTriggered) return true
                     val dx = event.rawX - touchX
                     val dy = event.rawY - touchY
                     if (kotlin.math.abs(dx) > clickThreshold || kotlin.math.abs(dy) > clickThreshold) {
                         isClick = false
+                        handler.removeCallbacks(longPressRunnable)
                     }
                     params.x = initialX + dx.toInt()
                     params.y = initialY + dy.toInt()
@@ -420,6 +436,11 @@ class FloatWindowService : Service() {
                     return true
                 }
                 MotionEvent.ACTION_UP -> {
+                    handler.removeCallbacks(longPressRunnable)
+                    if (longPressTriggered) {
+                        longPressTriggered = false
+                        return true
+                    }
                     if (isClick) onFloatBallClick()
                     return true
                 }
