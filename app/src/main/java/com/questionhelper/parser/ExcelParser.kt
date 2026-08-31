@@ -10,7 +10,13 @@ import java.io.InputStream
 object ExcelParser {
     private const val TAG = "ExcelParser"
 
-    fun parse(inputStream: InputStream): List<Question> {
+    /**
+     * 解析 Excel 题库文件。
+     *
+     * @param inputStream 文件输入流
+     * @param defaultSubject 默认分类，若提供则覆盖工作表名称
+     */
+    fun parse(inputStream: InputStream, defaultSubject: String? = null): List<Question> {
         val questions = mutableListOf<Question>()
         var workbook: org.apache.poi.ss.usermodel.Workbook? = null
 
@@ -89,13 +95,16 @@ object ExcelParser {
 
                         val options = optionsList.joinToString("|")
 
+                        // 使用 defaultSubject 覆盖 sheet 名称（如果提供了）
+                        val actualSubject = defaultSubject ?: sheetName
+
                         questions.add(
                             Question(
                                 content = contentWithOptions,
                                 options = options,
                                 answer = answer,
                                 analysis = "",
-                                subject = sheetName
+                                subject = actualSubject
                             )
                         )
                     } catch (e: Throwable) {
@@ -131,6 +140,10 @@ object ExcelParser {
         return questions
     }
 
+    /**
+     * 将单元格内容统一读取为字符串，并清理常见杂质。
+     * Numeric 类型会去掉末尾的 .0。
+     */
     private fun Cell.readString(): String {
         return when (cellType) {
             CellType.NUMERIC -> {
@@ -154,6 +167,9 @@ object ExcelParser {
         }.trim().clean()
     }
 
+    /**
+     * 清理文本：去除首尾空白、换行、全角空格，以及部分不可见字符。
+     */
     private fun String.clean(): String {
         return this
             .replace("\u00A0", "")
@@ -163,6 +179,9 @@ object ExcelParser {
             .trim()
     }
 
+    /**
+     * 判断第一行是否是标题行。
+     */
     private fun String.isHeader(): Boolean {
         val lower = this.lowercase()
         return lower.contains("题目") || lower.contains("题干") ||
@@ -171,6 +190,12 @@ object ExcelParser {
                lower.contains("question") || lower.contains("answer")
     }
 
+    /**
+     * 规范化答案格式：
+     * - "A,B,C" / "A、B、C" / "A B C" / "A,B,C," -> "ABC"
+     * - "正确" / "错误" / "对" / "错" / "T" / "F" / "√" / "×" -> 统一为 "正确" / "错误"
+     * - 其它情况去除空格后返回
+     */
     private fun normalizeAnswer(answer: String): String {
         if (answer.isEmpty()) return ""
 
