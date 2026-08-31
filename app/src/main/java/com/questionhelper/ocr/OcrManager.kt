@@ -24,12 +24,13 @@ class OcrManager(private val appContext: Context) {
 
     suspend fun recognizeFromBitmap(bitmap: Bitmap): String = withContext(Dispatchers.Default) {
         try {
-            // 图像预处理：灰度化 + 对比度增强
+            // 图像预处理：灰度化 + 对比度增强 + 条件放大
             val processedBitmap = preprocessBitmap(bitmap)
             val image = InputImage.fromBitmap(processedBitmap, 0)
             val result = recognizer.process(image).await()
             val text = result.textBlocks.joinToString("\n") { block -> block.text }
             Log.d(tag, "ML Kit 识别完成，长度=${text.length}")
+
             // 释放处理的 Bitmap（如果与原始不同）
             if (processedBitmap != bitmap) {
                 processedBitmap.recycle()
@@ -43,29 +44,34 @@ class OcrManager(private val appContext: Context) {
     }
 
     /**
-     * 图像预处理：转换为灰度图，增强对比度，并适当放大（可选）
+     * 图像预处理：
+     * 1. 灰度化
+     * 2. 对比度增强（温和参数）
+     * 3. 如果文字区域较小，则放大；否则保持原尺寸
      */
     private fun preprocessBitmap(src: Bitmap): Bitmap {
-        // 1. 转换为灰度图
+        // 1. 灰度化
         val grayscale = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(grayscale)
         val paint = Paint()
         val colorMatrix = ColorMatrix().apply {
-            setSaturation(0f) // 饱和度设为0，即灰度
+            setSaturation(0f)
         }
         paint.colorFilter = ColorMatrixColorFilter(colorMatrix)
         canvas.drawBitmap(src, 0f, 0f, paint)
 
-        // 2. 增强对比度
+        // 2. 对比度增强（采用更温和的系数，避免过度增强导致噪点）
         val contrastMatrix = ColorMatrix().apply {
-            val scale = 1.5f  // 对比度增强系数，可调整
-            val translate = (-0.25f * 255).toInt()
-            set(floatArrayOf(
-                scale, 0f, 0f, 0f, translate.toFloat(),
-                0f, scale, 0f, 0f, translate.toFloat(),
-                0f, 0f, scale, 0f, translate.toFloat(),
-                0f, 0f, 0f, 1f, 0f
-            ))
+            val scale = 1.2f
+            val translate = -20f
+            set(
+                floatArrayOf(
+                    scale, 0f, 0f, 0f, translate,
+                    0f, scale, 0f, 0f, translate,
+                    0f, 0f, scale, 0f, translate,
+                    0f, 0f, 0f, 1f, 0f
+                )
+            )
         }
         val contrastPaint = Paint()
         contrastPaint.colorFilter = ColorMatrixColorFilter(contrastMatrix)
@@ -77,20 +83,30 @@ class OcrManager(private val appContext: Context) {
             grayscale.recycle()
         }
 
-        // 3. 可选：放大图像（如果文字较小）
-        val scaleFactor = 1.5f  // 放大倍数，可根据需要调整
-        val scaledWidth = (enhanced.width * scaleFactor).toInt()
-        val scaledHeight = (enhanced.height * scaleFactor).toInt()
-        val scaledBitmap = Bitmap.createScaledBitmap(enhanced, scaledWidth, scaledHeight, true)
+        // 3. 条件放大：只有当文字区域高度小于 200 像素时才放大 1.5 倍，
+        //    否则保持原尺寸，避免放大导致模糊。
+        val targetMinHeight = 200
+        val scaleFactor = if (enhanced.height < targetMinHeight) 1.5f else 1.0f
 
-        if (enhanced != scaledBitmap) {
+        val finalBitmap = if (scaleFactor > 1.0f) {
+            val scaledWidth = (enhanced.width * scaleFactor).toInt()
+            val scaledHeight = (enhanced.height * scaleFactor).toInt()
+            Bitmap.createScaledBitmap(enhanced, scaledWidth, scaledHeight, true)
+        } else {
+            enhanced
+        }
+
+        if (enhanced != finalBitmap) {
             enhanced.recycle()
         }
 
-        return scaledBitmap
+        return finalBitmap
     }
 
     fun close() {
-        try { recognizer.close() } catch (_: Exception) {}
+        try {
+            recognizer.close()
+        } catch (_: Exception) {
+        }
     }
 }
