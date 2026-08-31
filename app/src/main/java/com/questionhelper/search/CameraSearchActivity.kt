@@ -2,6 +2,11 @@ package com.questionhelper.search
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -96,8 +101,12 @@ class CameraSearchViewModel : ViewModel() {
     private val _result = MutableStateFlow(SearchResult())
     val result: StateFlow<SearchResult> = _result.asStateFlow()
 
+    // 控制相机是否应该启动
+    private val _cameraStarted = MutableStateFlow(false)
+    val cameraStarted: StateFlow<Boolean> = _cameraStarted.asStateFlow()
+
     fun onPermissionGranted() {
-        // 相机实际启动在 Composable 中完成
+        _cameraStarted.value = true
     }
 
     fun processImage(imageProxy: ImageProxy) {
@@ -116,8 +125,11 @@ class CameraSearchViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 _result.update { it.copy(isRecognizing = true) }
-                val inputImage = InputImage.fromBitmap(bitmap, 0)
+                // 图像预处理：灰度化 + 对比度增强 + 放大
+                val processedBitmap = preprocessBitmap(bitmap)
+                val inputImage = InputImage.fromBitmap(processedBitmap, 0)
                 val text = recognizer.process(inputImage).await().text
+
                 if (text.isNotBlank()) {
                     val question = repository.searchQuestionSmart(text)
                     if (question != null) {
@@ -140,6 +152,10 @@ class CameraSearchViewModel : ViewModel() {
                 } else {
                     _result.update { it.copy(isRecognizing = false) }
                 }
+                // 释放处理过的 Bitmap
+                if (processedBitmap != bitmap) {
+                    processedBitmap.recycle()
+                }
             } catch (e: Exception) {
                 _result.value = SearchResult(
                     question = "识别出错",
@@ -155,7 +171,50 @@ class CameraSearchViewModel : ViewModel() {
         }
     }
 
-    private fun ImageProxy.toBitmap(): android.graphics.Bitmap? {
+    /**
+     * 图像预处理：灰度化 + 对比度增强 + 适当放大
+     */
+    private fun preprocessBitmap(src: Bitmap): Bitmap {
+        // 灰度化
+        val grayscale = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(grayscale)
+        val paint = Paint()
+        val colorMatrix = ColorMatrix().apply {
+            setSaturation(0f)
+        }
+        paint.colorFilter = ColorMatrixColorFilter(colorMatrix)
+        canvas.drawBitmap(src, 0f, 0f, paint)
+
+        // 对比度增强
+        val contrastMatrix = ColorMatrix().apply {
+            val scale = 1.5f
+            val translate = (-0.25f * 255).toInt()
+            set(floatArrayOf(
+                scale, 0f, 0f, 0f, translate.toFloat(),
+                0f, scale, 0f, 0f, translate.toFloat(),
+                0f, 0f, scale, 0f, translate.toFloat(),
+                0f, 0f, 0f, 1f, 0f
+            ))
+        }
+        val contrastPaint = Paint()
+        contrastPaint.colorFilter = ColorMatrixColorFilter(contrastMatrix)
+        val enhanced = Bitmap.createBitmap(grayscale.width, grayscale.height, grayscale.config)
+        val enhancedCanvas = Canvas(enhanced)
+        enhancedCanvas.drawBitmap(grayscale, 0f, 0f, contrastPaint)
+
+        if (grayscale != enhanced) {
+            grayscale.recycle()
+        }
+
+        // 放大 1.5 倍
+        val scaled = Bitmap.createScaledBitmap(enhanced, (enhanced.width * 1.5f).toInt(), (enhanced.height * 1.5f).toInt(), true)
+        if (enhanced != scaled) {
+            enhanced.recycle()
+        }
+        return scaled
+    }
+
+    private fun ImageProxy.toBitmap(): Bitmap? {
         val buffer = planes[0].buffer
         val bytes = ByteArray(buffer.remaining())
         buffer.get(bytes)
@@ -185,8 +244,8 @@ fun CameraSearchScreen(
     onBack: () -> Unit
 ) {
     val result by viewModel.result.collectAsState()
+    val cameraStarted by viewModel.cameraStarted.collectAsState()
     val context = LocalContext.current
-    // 获取 LifecycleOwner（Activity 本身实现了 LifecycleOwner）
     val lifecycleOwner = remember(context) { context as? LifecycleOwner }
 
     Scaffold(
@@ -212,37 +271,43 @@ fun CameraSearchScreen(
                     .weight(1f)
                     .background(Color.Black)
             ) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        PreviewView(ctx).apply {
-                            val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                            cameraProviderFuture.addListener({
-                                val cameraProvider = cameraProviderFuture.get()
-                                val preview = Preview.Builder().build().also {
-                                    it.setSurfaceProvider(surfaceProvider)
-                                }
-                                val imageAnalysis = ImageAnalysis.Builder()
-                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                    .build()
-                                imageAnalysis.setAnalyzer(Executors.newSingleThreadExecutor()) { imageProxy ->
-                                    viewModel.processImage(imageProxy)
-                                }
-                                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-                                cameraProvider.unbindAll()
-                                // 使用 lifecycleOwner 绑定
-                                lifecycleOwner?.let { owner ->
-                                    cameraProvider.bindToLifecycle(
-                                        owner,
-                                        cameraSelector,
-                                        preview,
-                                        imageAnalysis
-                                    )
-                                }
-                            }, ContextCompat.getMainExecutor(ctx))
+                if (cameraStarted) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { ctx ->
+                            PreviewView(ctx).apply {
+                                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                                cameraProviderFuture.addListener({
+                                    val cameraProvider = cameraProviderFuture.get()
+                                    val preview = Preview.Builder().build().also {
+                                        it.setSurfaceProvider(surfaceProvider)
+                                    }
+                                    val imageAnalysis = ImageAnalysis.Builder()
+                                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                        .build()
+                                    imageAnalysis.setAnalyzer(Executors.newSingleThreadExecutor()) { imageProxy ->
+                                        viewModel.processImage(imageProxy)
+                                    }
+                                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                                    cameraProvider.unbindAll()
+                                    lifecycleOwner?.let { owner ->
+                                        cameraProvider.bindToLifecycle(
+                                            owner,
+                                            cameraSelector,
+                                            preview,
+                                            imageAnalysis
+                                        )
+                                    }
+                                }, ContextCompat.getMainExecutor(ctx))
+                            }
                         }
+                    )
+                } else {
+                    // 相机未启动（等待权限）
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("等待相机权限...", color = Color.White)
                     }
-                )
+                }
             }
 
             Surface(
