@@ -179,7 +179,7 @@ fun ImportScreen() {
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    
+
                     // 现有分类
                     if (existingSubjects.isNotEmpty()) {
                         Text("已有分类：", style = MaterialTheme.typography.labelMedium)
@@ -200,7 +200,7 @@ fun ImportScreen() {
                         }
                         Spacer(modifier = Modifier.height(16.dp))
                     }
-                    
+
                     // 新分类输入
                     OutlinedTextField(
                         value = customCategory,
@@ -217,9 +217,9 @@ fun ImportScreen() {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { 
+                TextButton(onClick = {
                     customCategory = ""
-                    showCategoryDialog = false 
+                    showCategoryDialog = false
                 }) {
                     Text("使用默认")
                 }
@@ -232,7 +232,8 @@ private fun parseFile(inputStream: InputStream?, fileName: String?, defaultCateg
     inputStream ?: return emptyList()
     return when {
         fileName?.endsWith(".xlsx") == true || fileName?.endsWith(".xls") == true -> {
-            ExcelParser.parse(inputStream)
+            // 关键修改：将用户选择的分类传递给 ExcelParser
+            ExcelParser.parse(inputStream, defaultCategory)
         }
         else -> TxtParser.parse(inputStream, defaultCategory)
     }
