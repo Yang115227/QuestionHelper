@@ -65,7 +65,12 @@ fun WrongBookScreen() {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(q.content.take(80) + if (q.content.length > 80) "..." else "")
+                            // 只显示题干（不包含选项），避免内容过长
+                            val stem = extractQuestionStem(q.content)
+                            Text(
+                                text = stem.take(80) + if (stem.length > 80) "..." else "",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                             Spacer(modifier = Modifier.height(4.dp))
                             AssistChip(onClick = {}, label = { Text(q.subject) })
                         }
@@ -93,4 +98,20 @@ fun WrongBookScreen() {
             onDismiss = { showDeleteDialog = null }
         )
     }
+}
+
+/**
+ * 从题目内容中提取题干（所有非选项行），与练习界面保持一致。
+ * 支持 A-Z 字母选项。
+ */
+private fun extractQuestionStem(content: String): String {
+    val optionPattern = Regex("^\\s*[A-Za-z]\\s*[.、．:：）)]")
+    val stemLines = mutableListOf<String>()
+    for (line in content.lines()) {
+        val trimmed = line.trim()
+        if (trimmed.isNotEmpty() && !optionPattern.containsMatchIn(trimmed)) {
+            stemLines.add(trimmed)
+        }
+    }
+    return if (stemLines.isEmpty()) content.trim() else stemLines.joinToString("\n")
 }
