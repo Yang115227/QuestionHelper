@@ -88,8 +88,8 @@ class QuestionRepository(private val dao: QuestionDao) {
             cleanForMatch(extractQuestionStem(question.content)) == cleanedOcr
         }?.let { return@withContext it }
 
-        // 2. 包含匹配（双向）
-        val minLength = 4
+        // 2. 包含匹配（双向，且长度足够）
+        val minLength = 3
         allQuestions.find { question ->
             val stem = cleanForMatch(extractQuestionStem(question.content))
             if (stem.length < minLength || cleanedOcr.length < minLength) false
@@ -111,14 +111,15 @@ class QuestionRepository(private val dao: QuestionDao) {
             }
         }
 
-        if (bestScore >= 0.6) bestQuestion else null
+        // 阈值 0.5，兼顾宽松和准确
+        if (bestScore >= 0.5) bestQuestion else null
     }
 
     /**
      * 从 content 中提取题干（第一个非选项行）
      */
     private fun extractQuestionStem(content: String): String {
-        val optionPattern = Regex("^\\s*[A-Da-d]\\s*[.、．:：）)]")
+        val optionPattern = Regex("^\\s*[A-Za-z]\\s*[.、．:：）)]")
         for (line in content.lines()) {
             val trimmed = line.trim()
             if (trimmed.isNotEmpty() && !optionPattern.containsMatchIn(trimmed)) {
@@ -129,12 +130,19 @@ class QuestionRepository(private val dao: QuestionDao) {
     }
 
     /**
-     * 清洗文本：去除所有非字母数字和中文的字符，统一小写
+     * 清洗文本：
+     * - 去除题号（如 "3. "、"1、"、"（2）"）
+     * - 去除所有标点、空格、特殊字符
+     * - 只保留中文、字母、数字
+     * - 统一小写
      */
     private fun cleanForMatch(input: String): String {
-        return input
-            .lowercase()
-            .filter { it.isLetterOrDigit() || it.code in 0x4E00..0x9FFF }
+        // 去除行首题号
+        var text = input.replace(Regex("^\\s*\\d+\\s*[.、．)）]\\s*"), "")
+        // 去除所有引号、括号、逗号、句号等
+        text = text.replace(Regex("[\\p{Punct}\\s“”‘’《》【】（）]"), "")
+        // 只保留中文、字母、数字，并转小写
+        return text.lowercase().filter { it.isLetterOrDigit() || it.code in 0x4E00..0x9FFF }
     }
 
     /**
